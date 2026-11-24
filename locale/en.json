@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "SDD Compass",
+    "description": "Tracks the spec-driven change of the current project: phase, next step, documentation to read and drift findings.",
+    "detail": "Shows the SDD state in the composer dock and registers /sdd plus the sdd_status and sdd_check tools."
+  }
+}

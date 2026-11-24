@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Syntax check
+        run: |
+          node --check index.js
+          node --check client.js
+          node --check scripts/check.js
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Tests
+        run: node test/host.test.mjs
+      - name: Fixture smoke
+        run: |
+          node scripts/check.js test/fixtures/openspec --json > /dev/null
+          node scripts/check.js test/fixtures/scratch --json > /dev/null
+          node scripts/check.js test/fixtures/ssc --json > /dev/null
+          node scripts/check.js test/fixtures/trace --json > /dev/null

@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "version": "0.8",
+    "status": "needs_review",
+    "artifact_reviews": [
+      { "artifact": "model", "status": "needs_review" },
+      { "artifact": "brief", "status": "agreed" }
+    ]
+  },
+  "modules": [{ "name": "OKR" }],
+  "requirements": [{ "id": "FR-001", "text": "Import OKR" }],
+  "business_rules": [{ "id": "BR-001", "text": "Re-approval required" }],
+  "traceability": [{ "from": "FR-001", "to": "BR-001" }],
+  "open_questions": [
+    { "id": "Q-1", "level": "Blocker", "question": "Fields of re-approval" },
+    { "id": "Q-2", "level": "Minor", "question": "Formatting" }
+  ]
+}

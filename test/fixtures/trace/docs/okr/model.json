@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "status": "agreed",
+    "artifact_reviews": [{ "artifact": "model", "status": "agreed" }]
+  },
+  "requirements": [{ "id": "FR-001" }, { "id": "FR-002" }],
+  "business_rules": [{ "id": "BR-001" }],
+  "open_questions": []
+}

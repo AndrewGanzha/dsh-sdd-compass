@@ -1,0 +1,55 @@
+{
+  "name": "dsh-sdd-compass",
+  "version": "0.3.0",
+  "description": "SDD compass for DeepSeek Harness: shows the current spec-driven change phase, the next step, documentation to read and drift findings in the composer dock",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndrewGanzha/dsh-sdd-compass.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AndrewGanzha/dsh-sdd-compass/issues"
+  },
+  "homepage": "https://github.com/AndrewGanzha/dsh-sdd-compass#readme",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "bundle",
+    "sdd",
+    "spec-driven-development",
+    "openspec"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "src",
+    "locale/*.json",
+    "docs",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node scripts/check.js test/fixtures/openspec",
+    "test": "node --test test/"
+  }
+}
