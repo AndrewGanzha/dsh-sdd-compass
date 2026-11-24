@@ -15,7 +15,7 @@ import { promptText, sessionText, statusText } from '../src/render.js'
 import { gateReasonText, writeWarningText } from '../src/render.js'
 import { advanceText, portfolioText, reportText } from '../src/render.js'
 import { SddService } from '../src/service.js'
-import { buildState, phaseForOpenspec, phaseForScratch, phaseForSsc, selectActive } from '../src/state.js'
+import { buildState, commandFor, phaseForOpenspec, phaseForScratch, phaseForSsc, selectActive } from '../src/state.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId, parseAnnotations } from '../src/trace.js'
 import { median, percentile } from '../src/stats.js'
 
@@ -511,6 +511,15 @@ test('report text is a usable markdown summary', async () => {
   assert.match(report, /Практика: openspec/)
   assert.match(report, /## Замечания/)
   assert.match(report, /Impact: 1 · изменено 0/)
+})
+
+test('commandFor maps phases to exact commands', () => {
+  assert.equal(commandFor('openspec', 'verify', 'alpha'), 'openspec archive --change alpha')
+  assert.equal(commandFor('openspec', 'spec', 'alpha'), 'openspec instructions spec --change alpha')
+  assert.equal(commandFor('openspec', 'apply', 'alpha'), null)
+  assert.equal(commandFor('scratch', 'tasks', 'feat'), 'нарежь issues/NN-*.md')
+  assert.equal(commandFor('ssc', 'spec', 'okr'), 'закрой блокирующие вопросы в model.json')
+  assert.equal(commandFor('openspec', 'verify', null), null)
 })
 
 test('CI severity helpers', () => {

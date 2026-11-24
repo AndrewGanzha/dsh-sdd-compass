@@ -14,10 +14,13 @@ window.__ModuleLoader__.load({
 
     const ROUTE = 'api/sdd'
     const POLL_MS = 20_000
-    const OK = '#22c55e'
-    const WARN = '#f59e0b'
-    const BAD = '#ef4444'
-    const MUTED = '#94a3b8'
+    const C = {
+      ok: '#22c55e',
+      warn: '#f59e0b',
+      bad: '#ef4444',
+      muted: '#94a3b8',
+      accent: '#5b8def',
+    }
 
     const PHASES = ['idle', 'proposal', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive']
     const PHASE_LABELS = {
@@ -31,6 +34,15 @@ window.__ModuleLoader__.load({
       archive: 'завершено',
       unknown: 'неизвестно',
     }
+    const PRACTICE_LABELS = {
+      openspec: 'OpenSpec',
+      scratch: 'Scratch',
+      ssc: 'SSC',
+      generic: 'план',
+      unknown: 'не распознано',
+    }
+    const SEVERITY_ICON = { error: '✕', warn: '⚠', info: 'ℹ' }
+    const SEVERITY_COLOR = { error: C.bad, warn: C.warn, info: C.muted }
 
     // ------------------------------------------------------------------
     // Shared store: the dock renders the summary, the overlay the details.
@@ -109,28 +121,31 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------
-    // Formatting helpers
+    // Helpers
     // ------------------------------------------------------------------
-    const chipStyle = (extra) => ({
-      display: 'inline-flex',
-      alignItems: 'baseline',
-      gap: 6,
-      fontSize: 11,
-      lineHeight: '16px',
-      whiteSpace: 'nowrap',
-      fontVariantNumeric: 'tabular-nums',
-      ...extra,
-    })
+    const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
-    const buttonStyle = { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12 }
+    function practiceLabel(practice) {
+      return PRACTICE_LABELS[practice] ?? practice
+    }
+
+    function phaseProgress(phase) {
+      const index = PHASES.indexOf(phase)
+      if (index < 0) return { index: 0, total: PHASES.length, text: 'состояние не определено' }
+      return { index, total: PHASES.length, text: `шаг ${index + 1} из ${PHASES.length}` }
+    }
 
     function dotColor(data) {
-      if (!data) return MUTED
-      if (data.findings?.some((finding) => finding.severity === 'error')) return BAD
-      if (data.findings?.some((finding) => finding.severity === 'warn')) return WARN
-      if (data.phase === 'archive') return OK
-      if (data.phase === 'idle' || data.phase === 'unknown') return MUTED
-      return WARN
+      if (!data) return C.muted
+      if (data.findings?.some((finding) => finding.severity === 'error')) return C.bad
+      if (data.findings?.some((finding) => finding.severity === 'warn')) return C.warn
+      if (data.phase === 'archive') return C.ok
+      if (data.phase === 'idle' || data.phase === 'unknown') return C.muted
+      return C.accent
+    }
+
+    function warnCount(data) {
+      return (data?.findings ?? []).filter((finding) => finding.severity === 'warn' || finding.severity === 'error').length
     }
 
     function daysText(days) {
@@ -138,8 +153,192 @@ window.__ModuleLoader__.load({
       return `${days} дн`
     }
 
-    function warnCount(data) {
-      return (data?.findings ?? []).filter((finding) => finding.severity === 'warn' || finding.severity === 'error').length
+    function truncateMiddle(value, max = 46) {
+      const text = String(value ?? '')
+      if (text.length <= max) return text
+      const head = Math.ceil((max - 1) * 0.55)
+      const tail = max - 1 - head
+      return `${text.slice(0, head)}…${text.slice(-tail)}`
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Shared bits
+    // ------------------------------------------------------------------
+    const chip = (extra) => ({
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: '1px 8px',
+      borderRadius: 999,
+      fontSize: 10,
+      lineHeight: '16px',
+      background: 'rgba(127,127,127,0.14)',
+      whiteSpace: 'nowrap',
+      ...extra,
+    })
+
+    const button = (extra) => ({
+      padding: '6px 14px',
+      borderRadius: 8,
+      cursor: 'pointer',
+      fontSize: 12,
+      border: '1px solid rgba(127,127,127,0.35)',
+      background: 'transparent',
+      color: 'inherit',
+      ...extra,
+    })
+
+    function PhaseBar({ phase }) {
+      const { index, total } = phaseProgress(phase)
+      return h(
+        'div',
+        { style: { margin: '10px 0 2px' } },
+        h(
+          'div',
+          { style: { display: 'flex', gap: 3 } },
+          PHASES.map((item, position) =>
+            h('span', {
+              key: item,
+              title: PHASE_LABELS[item] ?? item,
+              style: {
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                background: position < index ? C.ok : position === index ? C.accent : 'rgba(127,127,127,0.22)',
+              },
+            }),
+          ),
+        ),
+        h(
+          'div',
+          { style: { marginTop: 6, fontSize: 10, opacity: 0.6 } },
+          `${phaseProgress(phase).text} · ${PHASE_LABELS[phase] ?? phase}`,
+        ),
+      )
+    }
+
+    function Section({ title, count, children, action }) {
+      return h(
+        'div',
+        { style: { marginTop: 16 } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 } },
+          h('div', { style: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.55 } }, title),
+          typeof count === 'number' ? h('span', { style: chip() }, String(count)) : null,
+          h('span', { style: { flex: 1 } }),
+          action ?? null,
+        ),
+        children,
+      )
+    }
+
+    function Row({ label, value, color, monoValue }) {
+      return h(
+        'div',
+        { style: { display: 'grid', gridTemplateColumns: '112px 1fr', gap: 8, padding: '2px 0', fontSize: 12 } },
+        h('span', { style: { opacity: 0.55 } }, label),
+        h('span', { style: { color, fontFamily: monoValue ? mono : undefined, wordBreak: 'break-word' } }, value),
+      )
+    }
+
+    function FindingRow({ finding }) {
+      return h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            gap: 8,
+            padding: '4px 0',
+            fontSize: 12,
+            lineHeight: '17px',
+            color: finding.severity === 'info' ? 'inherit' : SEVERITY_COLOR[finding.severity],
+          },
+        },
+        h('span', { style: { flex: '0 0 auto' } }, SEVERITY_ICON[finding.severity] ?? '·'),
+        h('span', null, finding.message),
+      )
+    }
+
+    function DocRow({ doc }) {
+      const slash = doc.path.lastIndexOf('/')
+      const dir = slash > 0 ? doc.path.slice(0, slash + 1) : ''
+      const name = slash > 0 ? doc.path.slice(slash + 1) : doc.path
+      return h(
+        'div',
+        { style: { padding: '3px 0', fontSize: 12, lineHeight: '17px' } },
+        h(
+          'div',
+          { style: { display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' } },
+          h('span', { style: { fontWeight: 600, wordBreak: 'break-all' } }, name),
+          h('span', { style: chip() }, doc.why),
+        ),
+        dir ? h('div', { title: doc.path, style: { fontSize: 10, opacity: 0.5, fontFamily: mono, wordBreak: 'break-all' } }, truncateMiddle(dir, 52)) : null,
+      )
+    }
+
+    function NextCard({ next }) {
+      const [copied, setCopied] = React.useState(false)
+      const command = next.command
+      return h(
+        'div',
+        {
+          style: {
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: 'rgba(91,141,239,0.10)',
+            borderLeft: `3px solid ${C.accent}`,
+          },
+        },
+        h('div', { style: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.6 } }, 'Что дальше'),
+        h('div', { style: { fontSize: 13, fontWeight: 600, marginTop: 2 } }, next.label),
+        next.hint && next.hint !== command ? h('div', { style: { fontSize: 11, opacity: 0.7, marginTop: 3 } }, next.hint) : null,
+        command
+          ? h(
+              'div',
+              { style: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' } },
+              h(
+                'code',
+                {
+                  style: {
+                    flex: '1 1 200px',
+                    fontFamily: mono,
+                    fontSize: 11,
+                    padding: '5px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(127,127,127,0.16)',
+                    wordBreak: 'break-all',
+                  },
+                },
+                command,
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  style: button({ padding: '4px 10px' }),
+                  onClick: async () => {
+                    if (await copyText(command)) {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1500)
+                    }
+                  },
+                },
+                copied ? 'Скопировано' : 'Копировать',
+              ),
+            )
+          : null,
+      )
     }
 
     // ------------------------------------------------------------------
@@ -160,7 +359,7 @@ window.__ModuleLoader__.load({
         return h(
           'div',
           {
-            style: chipStyle({ color: BAD, cursor: 'pointer' }),
+            style: { fontSize: 11, lineHeight: '16px', color: C.bad, cursor: 'pointer' },
             title: `SDD: ${snapshot.error}`,
             onClick: () => setState({ open: true, tab: 'status' }),
           },
@@ -176,203 +375,231 @@ window.__ModuleLoader__.load({
         {
           role: 'status',
           'aria-label': 'SDD-компас',
-          title: `${data.project?.name ?? ''} · ${data.practice} · ${data.phaseLabel}\n${data.next?.label ?? ''}\nклик — подробности`,
+          title: [
+            data.project?.name ?? '',
+            `${practiceLabel(data.practice)} · ${data.phaseLabel}`,
+            data.next?.label ? `Дальше: ${data.next.label}` : '',
+            'клик — подробности',
+          ]
+            .filter(Boolean)
+            .join('\n'),
           onClick: () => setState({ open: true, tab: 'status' }),
-          style: chipStyle({ gap: 8, cursor: 'pointer', justifyContent: 'center', padding: '2px 0' }),
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 11,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+            justifyContent: 'center',
+            padding: '2px 0',
+          },
         },
-        h('span', { style: { opacity: 0.6, fontWeight: 600 } }, 'SDD'),
+        h('span', { style: { opacity: 0.55, fontWeight: 600 } }, 'SDD'),
         h('span', { style: { color: dotColor(data) } }, '●'),
         h('span', null, data.phaseLabel),
-        tasks && tasks.total > 0 ? h('span', { style: { opacity: 0.7 } }, `${tasks.done}/${tasks.total}`) : null,
-        warn > 0 ? h('span', { style: { color: WARN } }, `⚠ ${warn}`) : null,
+        tasks && tasks.total > 0 ? h('span', { style: { opacity: 0.65 } }, `${tasks.done}/${tasks.total}`) : null,
+        warn > 0 ? h('span', { style: { color: C.warn } }, `⚠ ${warn}`) : null,
       )
     }
 
     // ------------------------------------------------------------------
-    // Panel
+    // Panel tabs
     // ------------------------------------------------------------------
-    function PhaseDots({ phase }) {
-      const index = PHASES.indexOf(phase)
-      return h(
-        'div',
-        { style: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', margin: '6px 0' } },
-        PHASES.map((item, position) =>
-          h(
-            'span',
-            {
-              key: item,
-              title: PHASE_LABELS[item] ?? item,
-              style: {
-                width: position === index ? 22 : 8,
-                height: 8,
-                borderRadius: 4,
-                background: position < index ? OK : position === index ? WARN : 'rgba(127,127,127,0.35)',
-                transition: 'width 120ms ease',
-              },
-            },
-          ),
-        ),
-      )
-    }
-
-    function Row({ label, value, color }) {
-      return h(
-        'div',
-        { style: { display: 'grid', gridTemplateColumns: '130px 1fr', gap: 8, padding: '2px 0', fontSize: 12 } },
-        h('span', { style: { opacity: 0.6 } }, label),
-        h('span', { style: { color } }, value),
-      )
-    }
-
-    function Findings({ findings }) {
-      if (!findings || findings.length === 0) return h('div', { style: { opacity: 0.7, fontSize: 12 } }, 'Замечаний нет.')
-      return h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
-        findings.map((finding, index) =>
-          h(
-            'div',
-            {
-              key: `${finding.rule}-${index}`,
-              style: {
-                fontSize: 12,
-                lineHeight: '17px',
-                color: finding.severity === 'warn' ? WARN : finding.severity === 'error' ? BAD : 'inherit',
-              },
-            },
-            `${finding.severity === 'warn' ? '⚠' : finding.severity === 'error' ? '✕' : '·'} ${finding.message}`,
-          ),
-        ),
-      )
-    }
-
     function StatusTab({ data }) {
       const change = data.change
+      const findings = data.findings ?? []
+      const docs = data.docs ?? []
       return h(
         'div',
         null,
         h(
           'div',
           { style: { display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' } },
-          h('span', { style: { fontSize: 13, fontWeight: 600 } }, data.phaseLabel),
-          h('span', { style: { opacity: 0.6, fontSize: 11 } }, `${data.practice} · ${data.project?.branch ?? '—'}`),
+          h('span', { style: { fontSize: 14, fontWeight: 600 } }, data.project?.name ?? 'проект'),
+          h('span', { style: chip() }, practiceLabel(data.practice)),
+          data.project?.branch ? h('span', { style: { fontSize: 10, opacity: 0.5, fontFamily: mono } }, data.project.branch) : null,
         ),
-        h(PhaseDots, { phase: data.phase }),
+        h('div', { style: { fontSize: 12, opacity: 0.75, marginTop: 2 } }, data.phaseLabel),
+        h(PhaseBar, { phase: data.phase }),
+        data.next ? h(NextCard, { next: data.next }) : null,
         change
           ? h(
-              'div',
-              null,
-              h(Row, { label: 'Изменение', value: change.id }),
-              change.title ? h(Row, { label: 'Название', value: change.title }) : null,
+              Section,
+              { title: 'Изменение' },
+              h(Row, { label: 'ID', value: change.id, monoValue: true }),
+              change.title && change.title !== change.id ? h(Row, { label: 'Название', value: change.title }) : null,
               h(Row, { label: 'Обновлено', value: daysText(change.updatedDays) }),
-              change.tasks ? h(Row, { label: 'Задачи', value: `${change.tasks.done}/${change.tasks.total}` }) : null,
-              change.questions?.total ? h(Row, { label: 'Вопросы', value: String(change.questions.total) }) : null,
+              change.tasks && change.tasks.total > 0
+                ? h(Row, { label: 'Задачи', value: `${change.tasks.done}/${change.tasks.total}` })
+                : null,
+              change.questions?.total
+                ? h(Row, {
+                    label: 'Вопросы',
+                    value: change.questions.blockers
+                      ? `${change.questions.total} (блокирующих ${change.questions.blockers})`
+                      : String(change.questions.total),
+                  })
+                : null,
+              data.links && (data.links.impact > 0 || data.links.changed > 0)
+                ? h(Row, {
+                    label: 'Impact',
+                    value: `${data.links.impact} · изменено ${data.links.changed} · вне ${data.links.untrackedCount}`,
+                  })
+                : null,
             )
-          : h('div', { style: { fontSize: 12, opacity: 0.7, margin: '6px 0' } }, 'Активных изменений нет.'),
-        data.links && (data.links.impact > 0 || data.links.changed > 0)
-          ? h(Row, {
-              label: 'Impact',
-              value: `${data.links.impact} · изменено ${data.links.changed} · вне Impact ${data.links.untrackedCount}`,
-            })
-          : null,
-        data.next
+          : h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 12 } }, 'Активных изменений нет.'),
+        h(
+          Section,
+          { title: 'Замечания', count: findings.length },
+          findings.length === 0
+            ? h('div', { style: { fontSize: 12, opacity: 0.65 } }, 'Всё чисто — замечаний нет.')
+            : findings.map((finding, index) => h(FindingRow, { key: `${finding.rule}-${index}`, finding })),
+        ),
+        docs.length > 0
           ? h(
-              'div',
-              { style: { marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(127,127,127,0.12)' } },
-              h('div', { style: { fontSize: 11, opacity: 0.6 } }, 'Следующий шаг'),
-              h('div', { style: { fontSize: 12, fontWeight: 600 } }, data.next.label),
-              data.next.hint ? h('div', { style: { fontSize: 11, opacity: 0.7, marginTop: 2 } }, data.next.hint) : null,
+              Section,
+              {
+                title: 'Документы',
+                count: docs.length,
+                action: h(
+                  'button',
+                  { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => setState({ tab: 'docs' }) },
+                  'Все →',
+                ),
+              },
+              docs.slice(0, 3).map((doc) => h(DocRow, { key: doc.path, doc })),
+              docs.length > 3
+                ? h('div', { style: { fontSize: 10, opacity: 0.5, marginTop: 4 } }, `ещё ${docs.length - 3} во вкладке «Документы»`)
+                : null,
             )
           : null,
-        data.rule ? h('div', { style: { fontSize: 11, opacity: 0.7, marginTop: 8 } }, data.rule) : null,
-        h('div', { style: { marginTop: 12, fontSize: 11, opacity: 0.6 } }, 'Замечания'),
-        h(Findings, { findings: data.findings }),
-        h('div', { style: { marginTop: 12, fontSize: 11, opacity: 0.6 } }, 'Документы'),
-        data.docs?.length
-          ? data.docs.map((doc) => h('div', { key: doc.path, style: { fontSize: 11, lineHeight: '16px', wordBreak: 'break-all' } }, `${doc.path} — ${doc.why}`))
-          : h('div', { style: { fontSize: 11, opacity: 0.7 } }, 'Не найдены.'),
+        data.rule ? h('div', { style: { fontSize: 11, opacity: 0.6, marginTop: 12 } }, data.rule) : null,
       )
     }
 
     function StatsTab({ data }) {
       const snapshot = data.stats?.snapshot
       const history = data.stats?.history
-      if (!snapshot) return h('div', { style: { fontSize: 12, opacity: 0.7 } }, 'Статистика недоступна.')
+      const trace = data.trace
+      const links = data.links
       return h(
         'div',
         null,
-        h(Row, { label: 'Фаза', value: `${data.phaseLabel}${snapshot.daysInPhase !== null ? ` · ${snapshot.daysInPhase} дн` : ''}` }),
-        h(Row, { label: 'В работе', value: String(snapshot.wip) }),
-        h(Row, { label: 'Задачи', value: `${snapshot.tasks.done}/${snapshot.tasks.total}` }),
-        snapshot.stuck?.length
-          ? h(
-              'div',
-              { style: { marginTop: 8 } },
-              h('div', { style: { fontSize: 11, opacity: 0.6 } }, 'Застряло'),
-              snapshot.stuck.map((item) =>
-                h('div', { key: item.id, style: { fontSize: 11, color: WARN } }, `${item.id} — ${item.days} дн (${PHASE_LABELS[item.phase] ?? item.phase})`),
-              ),
-            )
-          : null,
-        h('div', { style: { marginTop: 12, fontSize: 11, opacity: 0.6 } }, 'История (git)'),
-        history?.available
-          ? h(
-              'div',
-              null,
-              history.cycleMedianDays !== null
-                ? h(Row, { label: 'Цикл', value: `${history.cycleMedianDays} дн медиана · p90 ${history.cycleP90Days} · n=${history.sample}` })
-                : h(Row, { label: 'Цикл', value: 'мало данных' }),
-              history.archiveRate !== null ? h(Row, { label: 'До архива', value: `${Math.round(history.archiveRate * 100)}%` }) : null,
-              history.drift7d !== null ? h(Row, { label: 'Дрейф 7 дн', value: `${history.drift7d} файл(ов) кода` }) : null,
-            )
-          : h('div', { style: { fontSize: 11, opacity: 0.7 } }, history?.reason ?? 'История недоступна.'),
-        data.trace
-          ? h(Row, {
-              label: '@sdd',
-              value: `${data.trace.files} файл(ов)${data.trace.requirementIds ? ` · требования ${data.trace.covered}/${data.trace.requirementIds}` : ''} · связь с change ${data.trace.linkedChange}`,
-            })
-          : null,
-      )
-    }
-
-    function ProjectsTab({ projects, loading }) {
-      if (loading && !projects) return h('div', { style: { fontSize: 12, opacity: 0.7, padding: '12px 0' } }, 'Собираю проекты…')
-      if (!projects?.length) return h('div', { style: { fontSize: 12, opacity: 0.7, padding: '12px 0' } }, 'Проекты не найдены: нет workspace-реестра.')
-      return h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-        projects.map((row) =>
-          h(
-            'div',
-            { key: row.path ?? row.name, style: { fontSize: 12, display: 'flex', gap: 8, flexWrap: 'wrap' } },
-            h('span', { style: { fontWeight: 600 } }, row.name),
-            h('span', { style: { opacity: 0.65 } }, row.practice),
-            h('span', null, row.phaseLabel),
-            row.change ? h('span', { style: { opacity: 0.75, wordBreak: 'break-all' } }, `"${row.change}"`) : null,
-            row.warnings > 0 ? h('span', { style: { color: WARN } }, `⚠${row.warnings}`) : null,
-          ),
+        h(
+          Section,
+          { title: 'Сейчас' },
+          h(Row, { label: 'Фаза', value: `${data.phaseLabel}${snapshot?.daysInPhase !== null && snapshot?.daysInPhase !== undefined ? ` · ${snapshot.daysInPhase} дн` : ''}` }),
+          snapshot ? h(Row, { label: 'В работе', value: `${snapshot.wip} изменени(й)` }) : null,
+          snapshot?.tasks ? h(Row, { label: 'Задачи', value: `${snapshot.tasks.done}/${snapshot.tasks.total}` }) : null,
+          snapshot?.questions?.total
+            ? h(Row, {
+                label: 'Вопросы',
+                value: snapshot.questions.blockers
+                  ? `${snapshot.questions.total} (блокирующих ${snapshot.questions.blockers})`
+                  : String(snapshot.questions.total),
+              })
+            : null,
+          snapshot?.stuck?.length
+            ? h(
+                'div',
+                { style: { marginTop: 6 } },
+                h('div', { style: { fontSize: 10, opacity: 0.5, marginBottom: 2 } }, 'Застряло'),
+                snapshot.stuck.map((item) =>
+                  h(
+                    'div',
+                    { key: item.id, style: { fontSize: 11, color: C.warn, padding: '1px 0' } },
+                    `${item.id} — ${item.days} дн (${PHASE_LABELS[item.phase] ?? item.phase})`,
+                  ),
+                ),
+              )
+            : null,
         ),
+        h(
+          Section,
+          { title: 'История' },
+          history?.available
+            ? h(
+                'div',
+                null,
+                history.cycleMedianDays !== null
+                  ? h(Row, { label: 'Цикл', value: `${history.cycleMedianDays} дн медиана · p90 ${history.cycleP90Days} · n=${history.sample}` })
+                  : h(Row, { label: 'Цикл', value: 'мало данных' }),
+                history.archiveRate !== null ? h(Row, { label: 'До архива', value: `${Math.round(history.archiveRate * 100)}%` }) : null,
+                history.drift7d !== null ? h(Row, { label: 'Дрейф 7 дн', value: `${history.drift7d} файл(ов)` }) : null,
+              )
+            : h('div', { style: { fontSize: 11, opacity: 0.65 } }, history?.reason ?? 'История недоступна.'),
+        ),
+        trace || links
+          ? h(
+              Section,
+              { title: 'Связи' },
+              trace
+                ? h(Row, {
+                    label: 'Аннотации',
+                    value: `${trace.files} файл(ов)${trace.requirementIds ? ` · требования ${trace.covered}/${trace.requirementIds}` : ''} · связь ${trace.linkedChange}`,
+                  })
+                : null,
+              links
+                ? h(Row, {
+                    label: 'Impact',
+                    value: `${links.impact} объявлено · ${links.changedInImpact} совпало · ${links.untrackedCount} вне`,
+                  })
+                : null,
+            )
+          : null,
       )
     }
 
     function DocsTab({ data }) {
-      if (!data.docs?.length) return h('div', { style: { fontSize: 12, opacity: 0.7 } }, 'Документы не найдены.')
+      const docs = data.docs ?? []
+      if (docs.length === 0) {
+        return h(
+          'div',
+          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
+          'Документы не найдены. Добавь docs/ или артефакты изменения — они появятся здесь.',
+        )
+      }
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, docs.map((doc) => h(DocRow, { key: doc.path, doc })))
+    }
+
+    function ProjectsTab({ projects, loading }) {
+      if (loading && !projects) return h('div', { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } }, 'Собираю проекты…')
+      if (!projects?.length) {
+        return h(
+          'div',
+          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
+          'Проекты не найдены. Открой проект в отдельной сессии — он появится в этом списке.',
+        )
+      }
       return h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-        data.docs.map((doc) =>
+        projects.map((row) =>
           h(
             'div',
-            { key: doc.path },
-            h('div', { style: { fontSize: 12, wordBreak: 'break-all' } }, doc.path),
-            h('div', { style: { fontSize: 11, opacity: 0.6 } }, doc.why),
+            { key: row.path ?? row.name, style: { fontSize: 12, lineHeight: '17px' } },
+            h(
+              'div',
+              { style: { display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' } },
+              h('span', { style: { fontWeight: 600 } }, row.name),
+              h('span', { style: chip() }, practiceLabel(row.practice)),
+              h('span', { style: { opacity: 0.75 } }, row.phaseLabel),
+              row.warnings > 0 ? h('span', { style: { color: C.warn } }, `⚠${row.warnings}`) : null,
+            ),
+            row.change ? h('div', { style: { fontSize: 10, opacity: 0.55, fontFamily: mono, wordBreak: 'break-all' } }, row.change) : null,
           ),
         ),
       )
     }
 
+    // ------------------------------------------------------------------
+    // Panel shell
+    // ------------------------------------------------------------------
     function Panel() {
       const snapshot = useStore()
+
       React.useEffect(() => {
         if (snapshot.open && currentSessionId) void load(currentSessionId, true)
       }, [snapshot.open, currentSessionId])
@@ -386,17 +613,30 @@ window.__ModuleLoader__.load({
       const data = snapshot.data
       const tabs = [
         ['status', 'Статус'],
-        ['stats', 'Статистика'],
+        ['stats', 'Метрики'],
         ['docs', 'Документы'],
         ['projects', 'Проекты'],
       ]
+      const reload = () => (snapshot.tab === 'projects' ? loadProjects() : load(currentSessionId, true))
+      const busy = snapshot.refreshing || snapshot.projectsLoading
 
       const body = h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 4, width: '100%', maxWidth: 460, boxSizing: 'border-box' } },
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            width: '100%',
+            maxWidth: 520,
+            minWidth: 280,
+            boxSizing: 'border-box',
+          },
+        },
+        // Tabs wrap instead of clipping; the refresh action lives in the footer.
         h(
           'div',
-          { style: { display: 'flex', gap: 6, borderBottom: '1px solid rgba(127,127,127,0.25)', paddingBottom: 6 } },
+          { style: { display: 'flex', flexWrap: 'wrap', gap: 4, borderBottom: '1px solid rgba(127,127,127,0.22)', paddingBottom: 6 } },
           tabs.map(([id, label]) =>
             h(
               'button',
@@ -405,30 +645,27 @@ window.__ModuleLoader__.load({
                 type: 'button',
                 onClick: () => setState({ tab: id }),
                 style: {
-                  ...buttonStyle,
                   border: 'none',
-                  background: snapshot.tab === id ? 'rgba(127,127,127,0.18)' : 'transparent',
+                  borderRadius: 999,
+                  padding: '5px 11px',
+                  fontSize: 12,
+                  cursor: 'pointer',
                   color: 'inherit',
+                  background: snapshot.tab === id ? 'rgba(91,141,239,0.18)' : 'transparent',
                   fontWeight: snapshot.tab === id ? 600 : 400,
+                  whiteSpace: 'nowrap',
                 },
               },
               label,
             ),
           ),
-          h('span', { style: { flex: 1 } }),
-          h(
-            'button',
-            {
-              type: 'button',
-              onClick: () => (snapshot.tab === 'projects' ? void loadProjects() : void load(currentSessionId, true)),
-              disabled: snapshot.refreshing || snapshot.projectsLoading,
-              style: buttonStyle,
-            },
-            snapshot.refreshing || snapshot.projectsLoading ? '…' : 'Обновить',
-          ),
         ),
         !data
-          ? h('div', { style: { fontSize: 12, opacity: 0.7, padding: '12px 0' } }, snapshot.status === 'error' ? `Ошибка: ${snapshot.error}` : 'Состояние ещё не вычислено.')
+          ? h(
+              'div',
+              { style: { fontSize: 12, opacity: 0.65, padding: '14px 0' } },
+              snapshot.status === 'error' ? `Не удалось получить состояние: ${snapshot.error}` : 'Состояние ещё не вычислено — открой проект и напиши сообщение.',
+            )
           : snapshot.tab === 'status'
             ? h(StatusTab, { data })
             : snapshot.tab === 'stats'
@@ -438,9 +675,13 @@ window.__ModuleLoader__.load({
                 : h(DocsTab, { data }),
         h(
           'div',
-          { style: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' } },
-          h('button', { type: 'button', onClick: close, style: buttonStyle }, 'Закрыть'),
-          data ? h('span', { style: { fontSize: 10, opacity: 0.5, alignSelf: 'center', wordBreak: 'break-all' } }, data.project?.root ?? '') : null,
+          { style: { display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(127,127,127,0.18)', flexWrap: 'wrap', alignItems: 'center' } },
+          h('button', { type: 'button', onClick: () => void reload(), disabled: busy, style: button() }, busy ? 'Обновляю…' : 'Обновить'),
+          h('button', { type: 'button', onClick: close, style: button() }, 'Закрыть'),
+          h('span', { style: { flex: 1 } }),
+          data?.project?.root
+            ? h('span', { title: data.project.root, style: { fontSize: 9, opacity: 0.4, fontFamily: mono, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, truncateMiddle(data.project.root, 34))
+            : null,
         ),
       )
 
@@ -460,6 +701,7 @@ window.__ModuleLoader__.load({
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(0,0,0,0.45)',
+            padding: 12,
           },
         },
         h(
@@ -469,16 +711,15 @@ window.__ModuleLoader__.load({
             style: {
               background: 'Canvas',
               color: 'CanvasText',
-              border: '1px solid rgba(127,127,127,0.4)',
-              borderRadius: 10,
+              border: '1px solid rgba(127,127,127,0.35)',
+              borderRadius: 12,
               padding: 16,
-              width: 'min(460px, 92vw)',
-              maxHeight: '80vh',
+              width: 'min(520px, 94vw)',
+              maxHeight: '84vh',
               overflow: 'auto',
               boxSizing: 'border-box',
             },
           },
-          h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } }, 'SDD-компас'),
           body,
         ),
       )

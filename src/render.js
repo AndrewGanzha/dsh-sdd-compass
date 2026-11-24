@@ -5,6 +5,8 @@
  * given state.
  */
 
+import { commandFor } from './state.js'
+
 const PROMPT_LIMIT = 640
 const SESSION_LIMIT = 900
 
@@ -186,18 +188,7 @@ export function advanceText(state) {
   const changeId = state.change?.id ?? '<change>'
   const lines = [`Фаза: ${state.phaseLabel} · изменение "${changeId}"`]
   if (state.next) lines.push(`Шаг: ${state.next.label}`)
-  let command = null
-  if (state.practice === 'openspec') {
-    if (state.phase === 'verify' || state.phase === 'archive') {
-      command = `openspec archive --change ${changeId}`
-    } else if (['proposal', 'spec', 'design', 'tasks'].includes(state.phase)) {
-      command = `openspec instructions ${state.phase} --change ${changeId}`
-    }
-  } else if (state.practice === 'scratch') {
-    command = state.phase === 'tasks' ? 'разбей спеку на issues/NN-*.md' : '/sdd next'
-  } else if (state.practice === 'ssc') {
-    command = state.change?.workflow?.next ?? 'закрой блокирующие вопросы в model.json'
-  }
+  const command = state.next?.command ?? commandFor(state.practice, state.phase, state.change?.id)
   if (command) lines.push(`Команда: ${command}`)
   lines.push('Плагин ничего не выполняет сам: запусти команду вручную и подтверди.')
   return lines.join('\n')

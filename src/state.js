@@ -150,6 +150,18 @@ export function ruleFor(phase) {
   return PHASE_RULES[phase] ?? null
 }
 
+/** Exact command for the next step, or null when the plugin has none. */
+export function commandFor(practice, phase, changeId) {
+  if (!changeId) return null
+  if (practice === 'openspec') {
+    if (phase === 'verify') return `openspec archive --change ${changeId}`
+    if (['proposal', 'spec', 'design', 'tasks'].includes(phase)) return `openspec instructions ${phase} --change ${changeId}`
+  }
+  if (practice === 'scratch' && phase === 'tasks') return 'нарежь issues/NN-*.md'
+  if (practice === 'ssc' && ['spec', 'design'].includes(phase)) return 'закрой блокирующие вопросы в model.json'
+  return null
+}
+
 /** Compact change summary for the panel. */
 export function summarize(change, now) {
   return {
@@ -247,6 +259,7 @@ export async function buildState(input) {
   const docs = supported ? await pickDocs({ root, project, change: active, config, now }) : []
   const phase = active?.phase ?? (supported ? 'idle' : 'unknown')
   const next = nextFor({ ...active, phase }, detection.practice)
+  next.command = commandFor(detection.practice, phase, active?.id ?? null)
 
   const state = {
     schemaVersion: 1,
