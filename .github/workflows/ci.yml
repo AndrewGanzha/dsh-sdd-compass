@@ -23,7 +23,7 @@ jobs:
         run: node test/host.test.mjs
       - name: Fixture smoke
         run: |
-          node scripts/check.js test/fixtures/openspec --json > /dev/null
-          node scripts/check.js test/fixtures/scratch --json > /dev/null
-          node scripts/check.js test/fixtures/ssc --json > /dev/null
-          node scripts/check.js test/fixtures/trace --json > /dev/null
+          node scripts/check.js test/fixtures/openspec --json --no-git > /dev/null
+          node scripts/check.js test/fixtures/scratch --json --no-git > /dev/null
+          node scripts/check.js test/fixtures/ssc --json --no-git > /dev/null
+          node scripts/check.js test/fixtures/trace --json --no-git > /dev/null

@@ -4,6 +4,7 @@
  *   node scripts/check.js <path> [--json] [--prompt]
  */
 
+import path from 'node:path'
 import { resolveProject } from '../src/project.js'
 import { buildState } from '../src/state.js'
 import { promptText, statsText, statusText } from '../src/render.js'
@@ -13,8 +14,19 @@ const target = args.find((value) => !value.startsWith('--')) ?? process.cwd()
 const asJson = args.includes('--json')
 const showPrompt = args.includes('--prompt')
 const showStats = args.includes('--stats')
+const noGit = args.includes('--no-git')
 
-const project = await resolveProject(target)
+const project = noGit
+  ? {
+      root: path.resolve(target),
+      name: path.basename(path.resolve(target)),
+      isGit: false,
+      branch: null,
+      dirty: 0,
+      changedFiles: [],
+      codeChanges: [],
+    }
+  : await resolveProject(target)
 const state = await buildState({ root: project.root, project })
 
 if (asJson) {

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +31,18 @@ function projectFor(root) {
     changedFiles: [],
     codeChanges: [],
   }
+}
+
+/**
+ * Copy a fixture outside the repository: service tests resolve the project
+ * root through git, so a fixture inside the plugin repo would resolve to the
+ * repository root instead of itself.
+ */
+async function tempFixture(name) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'sdd-compass-'))
+  const root = path.join(dir, name)
+  await cp(fixture(name), root, { recursive: true })
+  return { dir, root, cleanup: () => rm(dir, { recursive: true, force: true }) }
 }
 
 async function stateFor(name, config) {
@@ -226,7 +240,8 @@ test('checks: stale change and pending archive', async () => {
 })
 
 test('service resolves a pre-existing session from persisted headers', async () => {
-  const root = fixture('openspec')
+  const temp = await tempFixture('openspec')
+  const root = temp.root
   const ctx = {
     get(name) {
       if (name !== 'sessionPersistence') return undefined
@@ -241,6 +256,7 @@ test('service resolves a pre-existing session from persisted headers', async () 
     assert.equal(state.practice, 'openspec')
   } finally {
     service.dispose()
+    await temp.cleanup()
   }
 })
 
@@ -291,11 +307,12 @@ test('write warning and gate text respect phase and strictness', () => {
 })
 
 test('service warns on code writes but not on artifact writes', async () => {
-  const root = fixture('openspec-spec')
+  const temp = await tempFixture('openspec-spec')
+  const root = temp.root
   const service = new SddService()
-  const exec = (path) => ({
+  const exec = (target) => ({
     name: 'write',
-    arguments: { file_path: path },
+    arguments: { file_path: target },
     agent: { session: { header: { cwd: root } } },
   })
   try {
@@ -306,19 +323,20 @@ test('service warns on code writes but not on artifact writes', async () => {
     assert.equal(await service.writeWarning({ ...exec('src/api/export.ts'), name: 'read' }), null)
   } finally {
     service.dispose()
+    await temp.cleanup()
   }
 })
 
 test('service gate denies code writes only under strictness gate', async () => {
-  const gateRoot = fixture('gate')
+  const gateTemp = await tempFixture('gate')
   const gateService = new SddService()
-  const exec = (path) => ({
+  const exec = (target) => ({
     name: 'edit',
-    arguments: { path },
-    agent: { session: { header: { cwd: gateRoot } } },
+    arguments: { path: target },
+    agent: { session: { header: { cwd: gateTemp.root } } },
   })
   try {
-    const state = await gateService.ensureState(gateRoot)
+    const state = await gateService.ensureState(gateTemp.root)
     assert.equal(state.phase, 'spec')
     assert.equal(state.strictness, 'gate')
     assert.match(await gateService.gateReason(exec('src/api/export.ts')), /гейт/)
@@ -326,22 +344,25 @@ test('service gate denies code writes only under strictness gate', async () => {
     assert.equal(await gateService.gateReason({ ...exec('src/api/export.ts'), name: 'read' }), null)
   } finally {
     gateService.dispose()
+    await gateTemp.cleanup()
   }
 
+  const warnTemp = await tempFixture('openspec-spec')
   const warnService = new SddService()
   try {
-    const state = await warnService.ensureState(fixture('openspec-spec'))
+    const state = await warnService.ensureState(warnTemp.root)
     assert.equal(state.strictness, 'warn')
     assert.equal(
       await warnService.gateReason({
         name: 'write',
         arguments: { file_path: 'src/api/export.ts' },
-        agent: { session: { header: { cwd: fixture('openspec-spec') } } },
+        agent: { session: { header: { cwd: warnTemp.root } } },
       }),
       null,
     )
   } finally {
     warnService.dispose()
+    await warnTemp.cleanup()
   }
 })
 
@@ -410,11 +431,11 @@ test('advance text names the exact command and never executes it', () => {
 })
 
 test('portfolio lists workspace projects', async () => {
-  const root = fixture('openspec')
+  const temp = await tempFixture('openspec')
   const ctx = {
     get(name) {
       if (name !== 'workspaceRegistry') return undefined
-      return { list: () => [{ path: root }] }
+      return { list: () => [{ path: temp.root }] }
     },
   }
   const service = new SddService(ctx)
@@ -426,5 +447,6 @@ test('portfolio lists workspace projects', async () => {
     assert.match(portfolioText(rows), /openspec/)
   } finally {
     service.dispose()
+    await temp.cleanup()
   }
 })
