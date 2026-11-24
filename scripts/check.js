@@ -1,20 +1,46 @@
 /**
- * CLI probe: print the computed SDD state for a project without the GUI.
+ * CLI probe and CI entry point: print the computed SDD state for a project
+ * without the GUI, or fail a pipeline on findings.
  *
- *   node scripts/check.js <path> [--json] [--prompt]
+ *   node scripts/check.js <path> [--json] [--prompt] [--stats] [--report]
+ *   node scripts/check.js <path> --ci [--fail-on warn|error|none]
+ *
+ * `--ci` implies `--fail-on warn`; without it the exit code is always 0.
+ * `--no-git` skips project resolution through git (fixtures, non-repo dirs).
  */
 
 import path from 'node:path'
+import { shouldFail } from '../src/check.js'
 import { resolveProject } from '../src/project.js'
+import { promptText, reportText, statsText, statusText } from '../src/render.js'
 import { buildState } from '../src/state.js'
-import { promptText, statsText, statusText } from '../src/render.js'
 
 const args = process.argv.slice(2)
-const target = args.find((value) => !value.startsWith('--')) ?? process.cwd()
+
+/** Read `--flag value` without letting the value become the target path. */
+function flagValue(name) {
+  const index = args.indexOf(name)
+  return index >= 0 ? args[index + 1] : null
+}
+
+const positional = []
+for (let index = 0; index < args.length; index += 1) {
+  if (args[index] === '--fail-on') {
+    index += 1
+    continue
+  }
+  if (args[index].startsWith('--')) continue
+  positional.push(args[index])
+}
+
+const target = positional[0] ?? process.cwd()
 const asJson = args.includes('--json')
 const showPrompt = args.includes('--prompt')
 const showStats = args.includes('--stats')
+const showReport = args.includes('--report')
 const noGit = args.includes('--no-git')
+const ci = args.includes('--ci')
+const failOn = flagValue('--fail-on') ?? (ci ? 'warn' : 'none')
 
 const project = noGit
   ? {
@@ -41,5 +67,16 @@ if (asJson) {
     console.log('\n--- stats ---')
     console.log(statsText(state))
   }
+  if (showReport) {
+    console.log('\n--- report ---')
+    console.log(reportText(state))
+  }
   console.log(`\ncomputed at ${state.computedAt}; root ${state.project.root}`)
+}
+
+if (failOn !== 'none' && shouldFail(state.findings, failOn)) {
+  const worst = state.findings.filter((finding) => finding.severity !== 'info')
+  console.error(`SDD check failed (--fail-on ${failOn}): ${worst.length} finding(s)`)
+  for (const finding of worst) console.error(`- ${finding.severity}: ${finding.message}`)
+  process.exitCode = 1
 }

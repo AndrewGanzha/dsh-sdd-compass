@@ -100,6 +100,11 @@ export function statusText(state) {
     }
     if (state.change?.version) lines.push(`Версия модели: ${state.change.version}`)
     if (state.change?.workflow?.next) lines.push(`Workflow: ${state.change.workflow.next}`)
+    if (state.links && (state.links.impact > 0 || state.links.changed > 0)) {
+      const impact = state.links.impact > 0 ? `Impact: ${state.links.impact} · ` : ''
+      const untracked = state.links.impact > 0 ? ` · вне Impact ${state.links.untrackedCount}` : ''
+      lines.push(`${impact}изменено ${state.links.changed}${untracked}`)
+    }
     if (state.next) lines.push(`Дальше: ${state.next.label}${state.next.hint ? ` (${state.next.hint})` : ''}`)
   }
   if (state.findings && state.findings.length > 0) {
@@ -209,6 +214,51 @@ export function portfolioText(rows) {
     const warnings = row.warnings > 0 ? ` · ⚠${row.warnings}` : ''
     const change = row.change ? ` · "${row.change}"` : ''
     lines.push(`- ${row.name} · ${row.practice} · ${row.phaseLabel}${change}${warnings}`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Weekly report in Markdown, ready to paste into a chat or a ticket.
+ * @param {any} state
+ * @param {Date|string} [today]
+ */
+export function reportText(state, today = new Date()) {
+  if (!state) return '# SDD-отчёт\n\nСостояние не вычислено.'
+  const date = today instanceof Date ? today.toISOString().slice(0, 10) : String(today)
+  const lines = [`# SDD-отчёт · ${state.project?.name ?? '—'} · ${date}`, '']
+  lines.push(`- Практика: ${state.practice}`)
+  const days = state.change?.updatedDays
+  lines.push(`- Фаза: ${state.phaseLabel}${typeof days === 'number' ? ` (${days} дн)` : ''}`)
+  if (state.change) lines.push(`- Изменение: "${state.change.id}" — ${state.change.title}`)
+  if (state.change?.tasks?.total) lines.push(`- Задачи: ${state.change.tasks.done}/${state.change.tasks.total}`)
+  if (state.change?.questions?.total) {
+    const blockers = state.change.questions.blockers ? ` (блокирующих ${state.change.questions.blockers})` : ''
+    lines.push(`- Вопросы: ${state.change.questions.total}${blockers}`)
+  }
+  const snapshot = state.stats?.snapshot
+  const history = state.stats?.history
+  if (snapshot) lines.push(`- В работе: ${snapshot.wip} изменени(й)`)
+  if (history?.available) {
+    if (history.cycleMedianDays !== null) {
+      lines.push(`- Цикл: ${history.cycleMedianDays} дн медиана, p90 ${history.cycleP90Days} (n=${history.sample})`)
+    }
+    if (history.archiveRate !== null) lines.push(`- Дошли до архива: ${Math.round(history.archiveRate * 100)}%`)
+    if (history.drift7d !== null) lines.push(`- Дрейф 7 дн: ${history.drift7d} файл(ов)`)
+  }
+  if (state.trace) {
+    const coverage = state.trace.requirementIds ? `, требования ${state.trace.covered}/${state.trace.requirementIds}` : ''
+    lines.push(`- Аннотации @sdd: ${state.trace.files} файл(ов)${coverage}, связь с change: ${state.trace.linkedChange}`)
+  }
+  if (state.links && (state.links.impact > 0 || state.links.changed > 0)) {
+    lines.push(`- Impact: ${state.links.impact} · изменено ${state.links.changed} · вне Impact ${state.links.untrackedCount}`)
+  }
+  lines.push('', '## Замечания')
+  if (!state.findings?.length) lines.push('- нет')
+  else for (const finding of state.findings) lines.push(`- ${finding.severity}: ${finding.message}`)
+  if (snapshot?.stuck?.length) {
+    lines.push('', '## Застряло')
+    for (const item of snapshot.stuck) lines.push(`- ${item.id} — ${item.days} дн (${item.phase})`)
   }
   return lines.join('\n')
 }

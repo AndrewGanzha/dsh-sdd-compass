@@ -14,6 +14,7 @@ import { detectPractice } from './detect.js'
 import { pickDocs } from './docs.js'
 import { buildStats } from './stats.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId } from './trace.js'
+import { matchesImpact } from './impact.js'
 
 export const PHASES = ['idle', 'proposal', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive']
 
@@ -183,6 +184,23 @@ function summarizeTrace(trace, requirementIds, change, project) {
   }
 }
 
+/** Map declared impact against changed and annotated files. */
+function buildLinks(project, change, trace) {
+  const impact = change?.impact ?? []
+  const changed = project.codeChanges ?? []
+  const annotated = new Set(trace ? Object.values(trace.byId).flat() : [])
+  const inImpact = (file) => impact.some((entry) => matchesImpact(file, entry))
+  const changedInImpact = changed.filter((file) => inImpact(file))
+  const untracked = changed.filter((file) => !inImpact(file) && !annotated.has(file))
+  return {
+    impact: impact.length,
+    changed: changed.length,
+    changedInImpact: changedInImpact.length,
+    untracked: untracked.slice(0, 10),
+    untrackedCount: untracked.length,
+  }
+}
+
 /**
  * Build the full state for one project.
  * @param {{ root: string, project: any, config?: any, now?: number, cache?: Map<string, any> }} input
@@ -210,6 +228,7 @@ export async function buildState(input) {
 
   const trace = supported ? await collectAnnotations(root, config.trace ?? {}, input.cache) : null
   const traceSummary = summarizeTrace(trace, active?.requirementIds ?? [], active, project)
+  const links = buildLinks(project, active, trace)
 
   const findings = runChecks({
     project,
@@ -222,6 +241,7 @@ export async function buildState(input) {
     archivedCount,
     candidates: detection.candidates,
     trace: traceSummary,
+    links,
   })
 
   const docs = supported ? await pickDocs({ root, project, change: active, config, now }) : []
@@ -269,6 +289,7 @@ export async function buildState(input) {
     docs,
     stats,
     trace: traceSummary,
+    links,
     note: note ?? null,
     configError: loaded.error ?? null,
     configPath: loaded.configPath ?? null,

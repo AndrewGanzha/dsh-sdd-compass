@@ -5,14 +5,15 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { parseTicketStatus } from '../src/adapters/scratch.js'
-import { runChecks } from '../src/check.js'
+import { runChecks, shouldFail, worstSeverity } from '../src/check.js'
 import { normalizeConfig } from '../src/config.js'
 import { detectPractice } from '../src/detect.js'
 import { countCheckboxes, countQuestions } from '../src/fsx.js'
+import { matchesImpact, parseImpact } from '../src/impact.js'
 import { isArtifactPath, isCodePath, parsePorcelain, pathCommitRange, recentDriftFiles } from '../src/project.js'
 import { promptText, sessionText, statusText } from '../src/render.js'
 import { gateReasonText, writeWarningText } from '../src/render.js'
-import { advanceText, portfolioText } from '../src/render.js'
+import { advanceText, portfolioText, reportText } from '../src/render.js'
 import { SddService } from '../src/service.js'
 import { buildState, phaseForOpenspec, phaseForScratch, phaseForSsc, selectActive } from '../src/state.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId, parseAnnotations } from '../src/trace.js'
@@ -187,6 +188,9 @@ test('artifact paths and porcelain parsing', () => {
   assert.equal(isCodePath('.omo/state.json'), false)
   assert.equal(isCodePath('docs/catalog.md'), false)
   assert.deepEqual(parsePorcelain(' M src/a.ts\n?? .sdd/\nR  old.txt -> new.txt'), ['src/a.ts', '.sdd/', 'new.txt'])
+  // A trimmed first line must not lose the first character of the path.
+  assert.deepEqual(parsePorcelain('M docs/api.md'), ['docs/api.md'])
+  assert.deepEqual(parsePorcelain(' M docs/api.md'), ['docs/api.md'])
 })
 
 test('git history helpers parse injected command output', async () => {
@@ -449,4 +453,73 @@ test('portfolio lists workspace projects', async () => {
     service.dispose()
     await temp.cleanup()
   }
+})
+
+test('parseImpact reads the Impact section only', () => {
+  const text = [
+    '# Change: x',
+    '',
+    '## What Changes',
+    '- src/other.ts',
+    '',
+    '## Impact',
+    '',
+    '- `src/api/export.ts` (new endpoint)',
+    '- docs/',
+    '- package.json',
+    '- not a path',
+    '',
+    '## Notes',
+    '- src/ignored.ts',
+  ].join('\n')
+  assert.deepEqual(parseImpact(text), ['src/api/export.ts', 'docs/', 'package.json'])
+  assert.deepEqual(parseImpact('## Impact\r\n\r\n- `src/api/export.ts`\r\n'), ['src/api/export.ts'])
+  assert.deepEqual(parseImpact('## Impact\n\n- Code: `src/a.ts`, `src/b.ts`.\n- HTTP API: removes `POST /api/v1/x`'), [
+    'src/a.ts',
+    'src/b.ts',
+  ])
+  assert.equal(matchesImpact('src/api/export.ts', 'src/api/export.ts'), true)
+  assert.equal(matchesImpact('src/api/nested/file.ts', 'src/api/'), true)
+  assert.equal(matchesImpact('src/api/file.ts', 'src/api/*.ts'), true)
+  assert.equal(matchesImpact('src/api/nested/file.ts', 'src/api/*.ts'), false)
+  assert.equal(matchesImpact('src/api/nested/file.ts', 'src/api/**/*.ts'), true)
+  assert.equal(matchesImpact('src/other.ts', 'src/api/'), false)
+})
+
+test('links compare Impact with changed and annotated files', async () => {
+  const root = fixture('openspec')
+  const project = {
+    ...projectFor(root),
+    dirty: 2,
+    changedFiles: ['src/api/export.ts', 'src/other.ts'],
+    codeChanges: ['src/api/export.ts', 'src/other.ts'],
+  }
+  const state = await buildState({ root, project, now: Date.now() })
+  assert.equal(state.phase, 'apply')
+  assert.equal(state.links.impact, 1)
+  assert.equal(state.links.changed, 2)
+  assert.equal(state.links.changedInImpact, 1)
+  assert.equal(state.links.untrackedCount, 1)
+  assert.deepEqual(state.links.untracked, ['src/other.ts'])
+  assert.ok(state.findings.some((finding) => finding.rule === 'link.untracked'))
+})
+
+test('report text is a usable markdown summary', async () => {
+  const state = await stateFor('openspec')
+  const report = reportText(state, '2026-11-24')
+  assert.match(report, /# SDD-отчёт · openspec · 2026-11-24/)
+  assert.match(report, /Практика: openspec/)
+  assert.match(report, /## Замечания/)
+  assert.match(report, /Impact: 1 · изменено 0/)
+})
+
+test('CI severity helpers', () => {
+  assert.equal(worstSeverity([]), 'info')
+  assert.equal(worstSeverity([{ severity: 'info' }, { severity: 'warn' }]), 'warn')
+  assert.equal(worstSeverity([{ severity: 'warn' }, { severity: 'error' }]), 'error')
+  assert.equal(shouldFail([], 'warn'), false)
+  assert.equal(shouldFail([{ severity: 'warn' }], 'warn'), true)
+  assert.equal(shouldFail([{ severity: 'warn' }], 'error'), false)
+  assert.equal(shouldFail([{ severity: 'error' }], 'error'), true)
+  assert.equal(shouldFail([{ severity: 'error' }], 'none'), false)
 })

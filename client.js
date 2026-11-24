@@ -269,6 +269,12 @@ window.__ModuleLoader__.load({
               change.questions?.total ? h(Row, { label: 'Вопросы', value: String(change.questions.total) }) : null,
             )
           : h('div', { style: { fontSize: 12, opacity: 0.7, margin: '6px 0' } }, 'Активных изменений нет.'),
+        data.links && (data.links.impact > 0 || data.links.changed > 0)
+          ? h(Row, {
+              label: 'Impact',
+              value: `${data.links.impact} · изменено ${data.links.changed} · вне Impact ${data.links.untrackedCount}`,
+            })
+          : null,
         data.next
           ? h(
               'div',

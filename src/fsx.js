@@ -60,7 +60,9 @@ export async function readTextSafe(target, maxBytes = 512 * 1024) {
   try {
     const stats = await fsp.stat(target)
     if (!stats.isFile() || stats.size > maxBytes) return null
-    return await fsp.readFile(target, 'utf8')
+    const text = await fsp.readFile(target, 'utf8')
+    // Normalize CRLF/CR so line-anchored Markdown parsers work on Windows files.
+    return text.replace(/\r\n?/g, '\n')
   } catch {
     return null
   }

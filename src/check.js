@@ -3,13 +3,33 @@
  * advisory and evidence-backed; nothing here blocks a tool call.
  */
 
+/** Highest severity present in a findings list. */
+export function worstSeverity(findings) {
+  if (!Array.isArray(findings)) return 'info'
+  if (findings.some((finding) => finding?.severity === 'error')) return 'error'
+  if (findings.some((finding) => finding?.severity === 'warn')) return 'warn'
+  return 'info'
+}
+
+/**
+ * Decide whether a CI run fails for a findings list.
+ * @param {Array<{severity: string}>} findings
+ * @param {'error'|'warn'|'none'} failOn
+ */
+export function shouldFail(findings, failOn = 'warn') {
+  const worst = worstSeverity(findings)
+  if (failOn === 'none') return false
+  if (failOn === 'error') return worst === 'error'
+  return worst === 'warn' || worst === 'error'
+}
+
 /**
  * Run the configured checks.
  * @param {{ project: any, practice: string, change: any, changes: any[], config: any, now: number, driftPaths: string[]|null, archivedCount: number, candidates: string[] }} input
  * @returns {Array<{ rule: string, severity: 'error'|'warn'|'info', message: string, paths?: string[] }>}
  */
 export function runChecks(input) {
-  const { project, practice, change, changes, config, now, driftPaths, archivedCount, candidates, trace } = input
+  const { project, practice, change, changes, config, now, driftPaths, archivedCount, candidates, trace, links } = input
   const checks = { drift: true, archive: true, stale: true, statuses: true, trace: true, ...(config?.checks ?? {}) }
   const staleAfterDays = Number.isFinite(config?.staleAfterDays) ? config.staleAfterDays : 14
   const findings = []
@@ -175,6 +195,25 @@ export function runChecks(input) {
         rule: 'trace.unannotated',
         severity: 'info',
         message: 'Изменённый код не содержит аннотаций @sdd — связь с изменением не прослеживается.',
+      })
+    }
+  }
+
+  // Impact map: declared files versus what actually changed.
+  if (checks.drift && change && links) {
+    if (links.impact > 0 && links.changed > 0 && links.changedInImpact === 0) {
+      findings.push({
+        rule: 'link.impact-missed',
+        severity: 'info',
+        message: `Impact перечисляет ${links.impact} путь(ей), но ни один изменённый файл под них не попадает.`,
+      })
+    }
+    if (links.untrackedCount > 0 && ['apply', 'verify'].includes(change.phase)) {
+      findings.push({
+        rule: 'link.untracked',
+        severity: 'warn',
+        message: `Изменено вне Impact и без @sdd: ${links.untrackedCount} файл(ов).`,
+        paths: links.untracked,
       })
     }
   }

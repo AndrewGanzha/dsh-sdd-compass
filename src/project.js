@@ -37,7 +37,9 @@ export async function gitText(root, args, timeout = 5000) {
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024,
     })
-    return stdout.trim()
+    // Drop trailing newlines only: leading spaces are significant for
+    // `git status --porcelain` (` M file` means worktree-modified).
+    return stdout.replace(/\r?\n+$/, '')
   } catch {
     return null
   }
@@ -66,7 +68,8 @@ export function parsePorcelain(output) {
   const files = []
   for (const line of output.split('\n')) {
     if (!line.trim()) continue
-    const raw = line.slice(3)
+    // Two status columns followed by a path; tolerate a missing leading space.
+    const raw = line.slice(2).replace(/^\s+/, '')
     // Renames are reported as "old -> new"; keep the destination.
     const target = raw.includes(' -> ') ? raw.split(' -> ').pop() : raw
     files.push(target.replace(/^"|"$/g, '').replace(/\\/g, '/'))

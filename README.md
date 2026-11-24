@@ -86,7 +86,7 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
   step and rule for the current phase (`Код не менять до утверждённой спеки`).
 - **Session-start briefing** — one `agent.inject()` message with the change and
   the documents to read first.
-- **`/sdd`** — `status | next | advance | archive | check | docs | stats | projects | init | refresh | help`.
+- **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | projects | init | refresh | help`.
 - **Tools** — `sdd_status`, `sdd_check` and `sdd_projects` for the model.
 - **Panel tabs** — status, statistics, documents, projects.
 
@@ -111,6 +111,29 @@ and reports:
 - `trace.unannotated` — the changed code carries no annotations while the
   change is in `apply`/`verify`.
 
+### Impact map
+
+OpenSpec proposals can declare the files a change touches under `## Impact`.
+The compass compares that list with the working tree:
+
+- `link.impact-missed` — Impact lists paths, but no changed file matches them;
+- `link.untracked` — a code file changed outside Impact and without `@sdd`.
+
+Both rules stay quiet until the change reaches `apply`/`verify`.
+
+## CI
+
+Fail a pipeline when the project drifts:
+
+```bash
+node scripts/check.js . --ci                 # exit 1 on warn or error
+node scripts/check.js . --ci --fail-on error # exit 1 on error only
+node scripts/check.js . --json --ci          # machine-readable + exit code
+```
+
+`--ci` implies `--fail-on warn`; without it the exit code is always 0.
+`--report` prints a Markdown summary ready for a chat or a ticket.
+
 ## Checks
 
 - change not updated for longer than `staleAfterDays`;
@@ -120,6 +143,7 @@ and reports:
 - SSC artifact reviews pending, blocking open questions, broken `model.json`;
 - `@sdd` annotations with unknown IDs, missing requirement coverage, or changed
   code without any annotation;
+- changed code outside the proposal's `## Impact`;
 - documents for changed modules are surfaced with the reason
   `документация изменённого модуля`.
 
@@ -138,7 +162,8 @@ Nothing blocks by default; findings appear in the dock, the prompt and `/sdd che
 ```bash
 node --check index.js && node --check client.js
 node test/host.test.mjs        # fixtures: openspec, scratch, ssc, docs, trace, plain
-node scripts/check.js <path> --stats --prompt
+node scripts/check.js <path> --stats --prompt --report
+node scripts/check.js <path> --ci --fail-on warn
 ```
 
 ## License

@@ -346,6 +346,7 @@ export class SddService {
             '/sdd check — замечания',
             '/sdd docs — документы',
             '/sdd stats — статистика',
+            '/sdd report — отчёт в markdown',
             '/sdd projects — сводка по проектам',
             '/sdd init [practice] — создать .sdd/config.json',
             '/sdd refresh — пересчитать',
@@ -371,6 +372,7 @@ export class SddService {
       if (sub === 'check') return { kind: 'success', text: render.findingsText(state) }
       if (sub === 'docs') return { kind: 'success', text: render.docsText(state) }
       if (sub === 'stats') return { kind: 'success', text: render.statsText(state) }
+      if (sub === 'report') return { kind: 'success', text: render.reportText(state) }
       return { kind: 'error', text: `Неизвестная подкоманда: ${sub}. /sdd help` }
     } catch (error) {
       return { kind: 'error', text: String(error?.message ?? error) }
@@ -413,6 +415,7 @@ export class SddService {
       stats: state.stats.snapshot,
       history: state.stats.history,
       trace: state.trace,
+      links: state.links,
       changes: state.changes,
     }
   }
