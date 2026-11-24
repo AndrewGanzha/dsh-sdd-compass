@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { parseTicketStatus } from '../src/adapters/scratch.js'
 import { runChecks, shouldFail, worstSeverity } from '../src/check.js'
 import { normalizeConfig } from '../src/config.js'
+import { buildDigest, digestText, parseLog } from '../src/digest.js'
 import { detectPractice } from '../src/detect.js'
 import { countCheckboxes, countQuestions } from '../src/fsx.js'
 import { matchesImpact, parseImpact } from '../src/impact.js'
@@ -520,6 +521,66 @@ test('commandFor maps phases to exact commands', () => {
   assert.equal(commandFor('scratch', 'tasks', 'feat'), 'нарежь issues/NN-*.md')
   assert.equal(commandFor('ssc', 'spec', 'okr'), 'закрой блокирующие вопросы в model.json')
   assert.equal(commandFor('openspec', 'verify', null), null)
+})
+
+test('parseLog groups files under commits', () => {
+  const log = `${'a'.repeat(40)}\nsrc/a.ts\nopenspec/x/proposal.md\n\n${'b'.repeat(40)}\nREADME.md`
+  const commits = parseLog(log)
+  assert.equal(commits.length, 2)
+  assert.deepEqual(commits[0].files, ['src/a.ts', 'openspec/x/proposal.md'])
+  assert.deepEqual(commits[1].files, ['README.md'])
+})
+
+test('digest counts archived, started, commits and cycle time', async () => {
+  const now = 1_700_000_000_000
+  const base = Math.floor(now / 1000)
+  const project = { isGit: true, root: '/repo' }
+  const state = {
+    project: { name: 'demo' },
+    phaseLabel: 'реализация',
+    change: { id: 'new', tasks: { done: 1, total: 2 } },
+    next: { label: 'реализовать задачи', command: null },
+    findings: [{ severity: 'warn', message: 'не заархивировано' }],
+    changes: [
+      { id: 'old', relDir: 'openspec/changes/archive/old', archived: true },
+      { id: 'new', relDir: 'openspec/changes/new', archived: false },
+    ],
+    stats: { snapshot: { wip: 2, stuck: [{ id: 'old', days: 20 }] } },
+  }
+  const run = async (_root, args) => {
+    if (args.includes('--format=%ct')) {
+      if (args[args.length - 1].includes('old')) return `${base - 5 * 86400}\n${base - 2 * 86400}`
+      return `${base - 3 * 86400}\n${base - 1 * 86400}`
+    }
+    if (args.includes('--pretty=format:%H')) {
+      return [`${'a'.repeat(40)}`, 'src/a.ts', '', `${'b'.repeat(40)}`, 'openspec/changes/new/tasks.md'].join('\n')
+    }
+    return 'src/a.ts\nopenspec/changes/new/tasks.md'
+  }
+
+  const digest = await buildDigest({ project, state, now, days: 7, run })
+  assert.deepEqual(digest.archived, ['old'])
+  assert.deepEqual(digest.started, ['new'])
+  assert.equal(digest.cycleMedianDays, 3)
+  assert.equal(digest.cycleSample, 1)
+  assert.equal(digest.codeCommits, 1)
+  assert.equal(digest.artifactCommits, 1)
+  assert.deepEqual(digest.driftFiles, ['src/a.ts'])
+
+  const text = digestText(state, digest)
+  assert.match(text, /# SDD-дайджест · demo/)
+  assert.match(text, /Заархивировано: 1 \(old\)/)
+  assert.match(text, /Начато: 1 \(new\)/)
+  assert.match(text, /Цикл за окно: 3 дн медиана \(n=1\)/)
+  assert.match(text, /## Движение/)
+  assert.match(text, /## Замечания/)
+})
+
+test('digest without git degrades honestly', async () => {
+  const state = { project: { name: 'plain' }, phaseLabel: 'нет изменений', findings: [] }
+  const digest = await buildDigest({ project: { isGit: false, root: '/plain' }, state, now: Date.now() })
+  assert.equal(digest.available, false)
+  assert.match(digestText(state, digest), /История недоступна: проект не под git/)
 })
 
 test('CI severity helpers', () => {

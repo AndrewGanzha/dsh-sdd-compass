@@ -129,6 +129,8 @@ export async function recentDriftFiles(project, days = 7, run = gitText) {
   for (const line of output.split('\n')) {
     const file = line.trim()
     if (!file || isArtifactPath(file)) continue
+    // Commit ids can appear when a caller uses `--pretty=format:%H`.
+    if (/^[0-9a-f]{40}$/i.test(file)) continue
     files.add(file)
   }
   return [...files]

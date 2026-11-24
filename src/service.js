@@ -9,6 +9,7 @@
 import { promises as fsp, statSync, watch as fsWatch } from 'node:fs'
 import path from 'node:path'
 import { configTemplate } from './config.js'
+import { buildDigest, digestText } from './digest.js'
 import { detectPractice } from './detect.js'
 import { isArtifactPath, resolveProject } from './project.js'
 import * as render from './render.js'
@@ -335,6 +336,19 @@ export class SddService {
     return { ok: true, projects: await this.portfolio() }
   }
 
+  /**
+   * Weekly digest for the session's project.
+   * @param {any} exec
+   * @param {number} [days]
+   */
+  async digest(exec, days) {
+    const cwd = exec?.agent?.session?.header?.cwd
+    const state = await this.ensureState(cwd)
+    if (!state) return { ok: false, error: 'no-session', markdown: '' }
+    const digest = await buildDigest({ project: state.project, state, days })
+    return { ok: true, markdown: digestText(state, digest), digest }
+  }
+
   /** `/sdd` command handler. */
   async command(invocation) {
     try {
@@ -356,6 +370,7 @@ export class SddService {
             '/sdd docs — документы',
             '/sdd stats — статистика',
             '/sdd report — отчёт в markdown',
+            '/sdd digest [дней] — недельный дайджест',
             '/sdd projects — сводка по проектам',
             '/sdd init [practice] — создать .sdd/config.json',
             '/sdd refresh — пересчитать',
@@ -382,6 +397,11 @@ export class SddService {
       if (sub === 'docs') return { kind: 'success', text: render.docsText(state) }
       if (sub === 'stats') return { kind: 'success', text: render.statsText(state) }
       if (sub === 'report') return { kind: 'success', text: render.reportText(state) }
+      if (sub === 'digest') {
+        const days = Number.parseInt(rest[0] ?? '', 10)
+        const result = await this.digest(invocation, Number.isFinite(days) ? days : 7)
+        return result.ok ? { kind: 'success', text: result.markdown } : { kind: 'error', text: 'Не удалось построить дайджест.' }
+      }
       return { kind: 'error', text: `Неизвестная подкоманда: ${sub}. /sdd help` }
     } catch (error) {
       return { kind: 'error', text: String(error?.message ?? error) }

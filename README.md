@@ -86,8 +86,8 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
   step and rule for the current phase (`Код не менять до утверждённой спеки`).
 - **Session-start briefing** — one `agent.inject()` message with the change and
   the documents to read first.
-- **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | projects | init | refresh | help`.
-- **Tools** — `sdd_status`, `sdd_check` and `sdd_projects` for the model.
+- **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | digest | projects | init | refresh | help`.
+- **Tools** — `sdd_status`, `sdd_check`, `sdd_projects` and `sdd_digest` for the model.
 - **Panel tabs** — status, statistics, documents, projects.
 
 `/sdd advance` prints the exact command for the next step (for example
@@ -133,6 +133,17 @@ node scripts/check.js . --json --ci          # machine-readable + exit code
 
 `--ci` implies `--fail-on warn`; without it the exit code is always 0.
 `--report` prints a Markdown summary ready for a chat or a ticket.
+
+## Weekly digest
+
+`/sdd digest [days]`, `node scripts/check.js . --digest 7` and the `sdd_digest`
+tool produce a Markdown digest of the window: changes archived and started,
+commits with code versus artifacts, drift files, cycle median, the current
+phase and the findings. It stays honest when git is unavailable.
+
+To deliver it weekly, create a DSH scheduled task whose prompt asks for the
+digest (for example "Сделай недельный SDD-дайджест проекта: вызови sdd_digest
+и пришли результат"). The plugin never creates schedules by itself.
 
 ## Checks
 

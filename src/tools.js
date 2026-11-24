@@ -74,6 +74,38 @@ function projectsTextFor(value) {
 }
 
 /**
+ * `sdd_digest` — weekly digest for the session's project.
+ * @param {{ digest: (exec: any, days?: number) => Promise<any> }} service
+ */
+export function digestTool(service) {
+  return {
+    name: 'sdd_digest',
+    description:
+      'Build the SDD weekly digest of the current project: changes archived and started in the window, commits with code versus artifacts, drift files, cycle time, current phase, next step and findings. Use it for a scheduled weekly report or when the user asks what moved this week.',
+    parameters: {
+      type: 'object',
+      properties: {
+        days: {
+          type: 'integer',
+          description: 'Window in days (1–90). Defaults to 7.',
+        },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(_args, value) {
+        return textBlock(value?.markdown || 'Дайджест недоступен.')
+      },
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      return service.digest(exec, args?.days)
+    },
+  }
+}
+
+/**
  * `sdd_status` — full SDD state of the session's project.
  * @param {{ status: (exec: any) => Promise<any> }} service
  */

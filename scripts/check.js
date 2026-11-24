@@ -11,6 +11,7 @@
 
 import path from 'node:path'
 import { shouldFail } from '../src/check.js'
+import { buildDigest, digestText } from '../src/digest.js'
 import { resolveProject } from '../src/project.js'
 import { promptText, reportText, statsText, statusText } from '../src/render.js'
 import { buildState } from '../src/state.js'
@@ -25,8 +26,12 @@ function flagValue(name) {
 
 const positional = []
 for (let index = 0; index < args.length; index += 1) {
-  if (args[index] === '--fail-on') {
-    index += 1
+  if (args[index] === '--fail-on' || args[index] === '--digest') {
+    const next = args[index + 1]
+    if (next && !next.startsWith('--')) {
+      if (args[index] === '--digest' && /^\d+$/.test(next)) index += 1
+      else if (args[index] === '--fail-on') index += 1
+    }
     continue
   }
   if (args[index].startsWith('--')) continue
@@ -38,6 +43,9 @@ const asJson = args.includes('--json')
 const showPrompt = args.includes('--prompt')
 const showStats = args.includes('--stats')
 const showReport = args.includes('--report')
+const showDigest = args.includes('--digest')
+const digestArg = flagValue('--digest')
+const digestDays = digestArg && /^\d+$/.test(digestArg) ? Number.parseInt(digestArg, 10) : 7
 const noGit = args.includes('--no-git')
 const ci = args.includes('--ci')
 const failOn = flagValue('--fail-on') ?? (ci ? 'warn' : 'none')
@@ -70,6 +78,11 @@ if (asJson) {
   if (showReport) {
     console.log('\n--- report ---')
     console.log(reportText(state))
+  }
+  if (showDigest) {
+    console.log('\n--- digest ---')
+    const digest = await buildDigest({ project: state.project, state, days: digestDays })
+    console.log(digestText(state, digest))
   }
   console.log(`\ncomputed at ${state.computedAt}; root ${state.project.root}`)
 }
