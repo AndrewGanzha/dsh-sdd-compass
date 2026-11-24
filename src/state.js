@@ -171,6 +171,7 @@ export function summarize(change, now) {
     archived: change.archived,
     tasks: change.tasks,
     updatedDays: change.updatedAt ? Math.floor((now - change.updatedAt) / DAY) : null,
+    documents: (change.documents ?? []).slice(0, 8),
   }
 }
 

@@ -56,6 +56,9 @@ window.__ModuleLoader__.load({
       refreshing: false,
       projects: null,
       projectsLoading: false,
+      query: '',
+      results: null,
+      searching: false,
     }
     let currentSessionId = null
     const listeners = new Set()
@@ -117,6 +120,41 @@ window.__ModuleLoader__.load({
         setState({ projects: [], projectsLoading: false, error: String(error?.message ?? error) })
       } finally {
         projectsInFlight = false
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Internal search over projects, changes, documents and findings
+    // ------------------------------------------------------------------
+    let searchTimer = null
+    let searchInFlight = false
+
+    function setQuery(value) {
+      setState({ query: value })
+      if (searchTimer) clearTimeout(searchTimer)
+      if (value.trim().length < 2) {
+        setState({ results: null, searching: false })
+        return
+      }
+      searchTimer = setTimeout(() => void runSearch(value), 250)
+    }
+
+    async function runSearch(value) {
+      if (searchInFlight) return
+      searchInFlight = true
+      setState({ searching: true })
+      try {
+        const url = new URL('api/sdd/search', document.baseURI)
+        if (currentSessionId) url.searchParams.set('sessionId', currentSessionId)
+        url.searchParams.set('q', value)
+        const response = await fetch(url, { headers: { accept: 'application/json' }, credentials: 'same-origin' })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const payload = await response.json()
+        setState({ results: Array.isArray(payload?.results) ? payload.results : [], searching: false })
+      } catch {
+        setState({ results: [], searching: false })
+      } finally {
+        searchInFlight = false
       }
     }
 
@@ -594,6 +632,63 @@ window.__ModuleLoader__.load({
       )
     }
 
+    const KIND_LABELS = { project: 'проект', change: 'изменение', doc: 'документ', finding: 'замечание' }
+
+    function CopyPathButton({ path }) {
+      const [copied, setCopied] = React.useState(false)
+      return h(
+        'button',
+        {
+          type: 'button',
+          title: path,
+          style: button({ padding: '2px 8px', fontSize: 10 }),
+          onClick: async () => {
+            if (await copyText(path)) {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            }
+          },
+        },
+        copied ? '✓' : 'путь',
+      )
+    }
+
+    function SearchResults({ query, results, searching }) {
+      if (searching && !results) {
+        return h('div', { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } }, 'Ищу…')
+      }
+      const rows = results ?? []
+      if (rows.length === 0) {
+        return h(
+          'div',
+          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
+          `Ничего не найдено по «${query}». Попробуй имя модуля, ID изменения или фрагмент пути.`,
+        )
+      }
+      return h(
+        'div',
+        null,
+        h('div', { style: { fontSize: 10, opacity: 0.5, marginBottom: 6 } }, `Найдено: ${rows.length}`),
+        rows.map((row, index) =>
+          h(
+            'div',
+            { key: `${row.kind}-${index}-${row.title}`, style: { padding: '5px 0', borderBottom: '1px solid rgba(127,127,127,0.12)' } },
+            h(
+              'div',
+              { style: { display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' } },
+              h('span', { style: chip() }, KIND_LABELS[row.kind] ?? row.kind),
+              h('span', { style: { fontSize: 12, fontWeight: 600, wordBreak: 'break-all' } }, row.title),
+              h('span', { style: { flex: 1 } }),
+              row.path ? h(CopyPathButton, { path: row.path }) : null,
+            ),
+            row.subtitle
+              ? h('div', { style: { fontSize: 10, opacity: 0.55, marginTop: 1, wordBreak: 'break-word' } }, row.subtitle)
+              : null,
+          ),
+        ),
+      )
+    }
+
     // ------------------------------------------------------------------
     // Panel shell
     // ------------------------------------------------------------------
@@ -619,6 +714,7 @@ window.__ModuleLoader__.load({
       ]
       const reload = () => (snapshot.tab === 'projects' ? loadProjects() : load(currentSessionId, true))
       const busy = snapshot.refreshing || snapshot.projectsLoading
+      const searchActive = snapshot.query.trim().length >= 2
 
       const body = h(
         'div',
@@ -628,8 +724,8 @@ window.__ModuleLoader__.load({
             flexDirection: 'column',
             gap: 10,
             width: '100%',
-            maxWidth: 520,
-            minWidth: 280,
+            maxWidth: 720,
+            minWidth: 300,
             boxSizing: 'border-box',
           },
         },
@@ -660,19 +756,66 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
-        !data
-          ? h(
-              'div',
-              { style: { fontSize: 12, opacity: 0.65, padding: '14px 0' } },
-              snapshot.status === 'error' ? `Не удалось получить состояние: ${snapshot.error}` : 'Состояние ещё не вычислено — открой проект и напиши сообщение.',
-            )
-          : snapshot.tab === 'status'
-            ? h(StatusTab, { data })
-            : snapshot.tab === 'stats'
-              ? h(StatsTab, { data })
-              : snapshot.tab === 'projects'
-                ? h(ProjectsTab, { projects: snapshot.projects, loading: snapshot.projectsLoading })
-                : h(DocsTab, { data }),
+        h(
+          'div',
+          { style: { position: 'relative' } },
+          h('input', {
+            type: 'search',
+            value: snapshot.query,
+            placeholder: 'Поиск: проект, изменение, документ, замечание',
+            onChange: (event) => setQuery(event.target.value),
+            style: {
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '7px 30px 7px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(127,127,127,0.35)',
+              background: 'transparent',
+              color: 'inherit',
+              fontSize: 12,
+              outline: 'none',
+            },
+          }),
+          snapshot.query
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => setQuery(''),
+                  title: 'Очистить',
+                  style: {
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    opacity: 0.6,
+                    lineHeight: 1,
+                  },
+                },
+                '×',
+              )
+            : null,
+        ),
+        searchActive
+          ? h(SearchResults, { query: snapshot.query, results: snapshot.results, searching: snapshot.searching })
+          : !data
+            ? h(
+                'div',
+                { style: { fontSize: 12, opacity: 0.65, padding: '14px 0' } },
+                snapshot.status === 'error' ? `Не удалось получить состояние: ${snapshot.error}` : 'Состояние ещё не вычислено — открой проект и напиши сообщение.',
+              )
+            : snapshot.tab === 'status'
+              ? h(StatusTab, { data })
+              : snapshot.tab === 'stats'
+                ? h(StatsTab, { data })
+                : snapshot.tab === 'projects'
+                  ? h(ProjectsTab, { projects: snapshot.projects, loading: snapshot.projectsLoading })
+                  : h(DocsTab, { data }),
         h(
           'div',
           { style: { display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(127,127,127,0.18)', flexWrap: 'wrap', alignItems: 'center' } },
@@ -714,7 +857,7 @@ window.__ModuleLoader__.load({
               border: '1px solid rgba(127,127,127,0.35)',
               borderRadius: 12,
               padding: 16,
-              width: 'min(520px, 94vw)',
+              width: 'min(720px, 96vw)',
               maxHeight: '84vh',
               overflow: 'auto',
               boxSizing: 'border-box',

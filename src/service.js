@@ -13,6 +13,7 @@ import { detectPractice } from './detect.js'
 import { isArtifactPath, resolveProject } from './project.js'
 import * as render from './render.js'
 import { buildState } from './state.js'
+import { PHASE_LABELS } from './state.js'
 
 const TTL_MS = 15_000
 const DEBOUNCE_MS = 400
@@ -60,6 +61,7 @@ export class SddService {
     this.watchers = new Map()
     /** @type {Set<string>} sessions already seeded */
     this.seeded = new Set()
+    this.portfolioCache = new Map()
     this.disposed = false
   }
 
@@ -264,6 +266,12 @@ export class SddService {
       if (url.pathname.replace(/\/+$/, '').endsWith('/projects')) {
         return json(res, 200, { ok: true, projects: await this.portfolio() })
       }
+      if (url.pathname.replace(/\/+$/, '').endsWith('/search')) {
+        const sessionId = url.searchParams.get('sessionId') || null
+        const cwd = await this.cwdForSession(sessionId)
+        const found = await this.search(url.searchParams.get('q') ?? '', cwd)
+        return json(res, 200, { ok: true, ...found })
+      }
       const sessionId = url.searchParams.get('sessionId') || null
       let cwd = await this.cwdForSession(sessionId)
       if (!cwd && !sessionId && this.sessions.size === 1) {
@@ -288,6 +296,8 @@ export class SddService {
 
   /** Portfolio: one row per workspace project the host knows about. */
   async portfolio() {
+    const cached = this.portfolioCache?.get('rows')
+    if (cached && Date.now() - cached.at < 30_000) return cached.rows
     const registry = this.ctx?.get?.('workspaceRegistry') ?? null
     const workspaces = Array.isArray(registry?.list?.()) ? registry.list() : []
     const paths = workspaces.map((workspace) => workspace?.path).filter((value) => typeof value === 'string').slice(0, 12)
@@ -318,7 +328,61 @@ export class SddService {
         })
       }
     }
-    return rows.sort((left, right) => left.name.localeCompare(right.name))
+    rows.sort((left, right) => left.name.localeCompare(right.name))
+    this.portfolioCache ??= new Map()
+    this.portfolioCache.set('rows', { at: Date.now(), rows })
+    return rows
+  }
+
+  /**
+   * Internal search across the panel's content: projects, changes,
+   * documents, artifacts and findings of the current project.
+   * @param {string} query
+   * @param {string|null} cwd
+   */
+  async search(query, cwd) {
+    const q = String(query ?? '').trim().toLowerCase()
+    if (q.length < 2) return { query: q, results: [] }
+
+    const results = []
+    const seen = new Set()
+    const add = (kind, title, subtitle, pathValue, weight = 0) => {
+      const key = `${kind}:${title}:${pathValue ?? ''}`
+      if (seen.has(key)) return
+      seen.add(key)
+      const haystack = `${title} ${subtitle ?? ''} ${pathValue ?? ''}`.toLowerCase()
+      const index = haystack.indexOf(q)
+      if (index < 0) return
+      results.push({
+        kind,
+        title,
+        subtitle: subtitle ?? null,
+        path: pathValue ?? null,
+        score: (index === 0 || title.toLowerCase().startsWith(q) ? 100 : 50) + weight,
+      })
+    }
+
+    for (const project of await this.portfolio()) {
+      add('project', project.name, `${project.practice} · ${project.phaseLabel}`, project.path, 5)
+    }
+
+    const state = cwd ? await this.ensureState(cwd) : null
+    if (state) {
+      for (const change of state.changes ?? []) {
+        add('change', change.id, `${PHASE_LABELS[change.phase] ?? change.phase} · ${change.title ?? ''}`, null, 8)
+        for (const document of change.documents ?? []) {
+          add('doc', document.split('/').pop() ?? document, `артефакт изменения "${change.id}" · ${document}`, document, 4)
+        }
+      }
+      for (const doc of state.docs ?? []) add('doc', doc.path.split('/').pop() ?? doc.path, `${doc.why} · ${doc.path}`, doc.path, 3)
+      for (const finding of state.findings ?? []) add('finding', finding.message, finding.rule, null, 1)
+      for (const artifact of state.change?.artifacts ?? []) {
+        if (artifact?.path) add('doc', artifact.path.split('/').pop() ?? artifact.path, 'артефакт изменения', artifact.path, 3)
+      }
+    }
+
+    results.sort((left, right) => right.score - left.score || left.kind.localeCompare(right.kind))
+    return { query: q, results: results.slice(0, 30) }
   }
 
   /** Tool `sdd_projects`: portfolio rows. */
