@@ -522,23 +522,6 @@ test('commandFor maps phases to exact commands', () => {
   assert.equal(commandFor('openspec', 'verify', null), null)
 })
 
-test('search finds changes, documents and findings', async () => {
-  const temp = await tempFixture('openspec')
-  const service = new SddService()
-  try {
-    const found = await service.search('alpha', temp.root)
-    assert.ok(found.results.some((row) => row.kind === 'change' && row.title === 'alpha'))
-    assert.ok(found.results.some((row) => row.kind === 'doc' && row.path.includes('proposal')))
-    assert.equal((await service.search('a', temp.root)).results.length, 0)
-
-    const byDoc = await service.search('tasks', temp.root)
-    assert.ok(byDoc.results.some((row) => row.path && row.path.includes('tasks.md')))
-  } finally {
-    service.dispose()
-    await temp.cleanup()
-  }
-})
-
 test('CI severity helpers', () => {
   assert.equal(worstSeverity([]), 'info')
   assert.equal(worstSeverity([{ severity: 'info' }, { severity: 'warn' }]), 'warn')

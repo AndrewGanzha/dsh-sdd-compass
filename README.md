@@ -87,16 +87,8 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
 - **Session-start briefing** — one `agent.inject()` message with the change and
   the documents to read first.
 - **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | projects | init | refresh | help`.
-- **Tools** — `sdd_status`, `sdd_check`, `sdd_projects` and `sdd_search` for the model.
-- **Panel tabs** — status, statistics, documents, projects, plus a search field.
-
-## Search
-
-The panel has an internal search field over everything it already knows:
-workspace projects, changes, documents and artifacts, and findings. Type a
-module name, a change id, a fragment of a document path, or finding text; the
-panel widens to 720px and lists matches with a `путь` button to copy the path.
-The same index is exposed to the model as `sdd_search`.
+- **Tools** — `sdd_status`, `sdd_check` and `sdd_projects` for the model.
+- **Panel tabs** — status, statistics, documents, projects.
 
 `/sdd advance` prints the exact command for the next step (for example
 `openspec archive --change <name>`); the plugin never executes it, the person

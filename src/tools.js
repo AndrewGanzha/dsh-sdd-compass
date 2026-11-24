@@ -74,48 +74,6 @@ function projectsTextFor(value) {
 }
 
 /**
- * `sdd_search` — internal search over the panel's content.
- * @param {{ search: (query: string, cwd: string|null) => Promise<any> }} service
- */
-export function searchTool(service) {
-  return {
-    name: 'sdd_search',
-    description:
-      'Search the current project SDD content: changes, documents, change artifacts and findings, plus known workspace projects. Use it to find the spec or doc that mentions a module, a change name, or a finding.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Case-insensitive substring, at least 2 characters.',
-        },
-      },
-      required: ['query'],
-      additionalProperties: false,
-    },
-    output: {
-      schema: OUTPUT_SCHEMA,
-      render(_args, value) {
-        return textBlock(searchTextFor(value))
-      },
-    },
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const cwd = exec?.agent?.session?.header?.cwd ?? null
-      return service.search(args.query, cwd)
-    },
-  }
-}
-
-function searchTextFor(value) {
-  if (!value?.results?.length) return `Ничего не найдено по «${value?.query ?? ''}».`
-  return [
-    `Найдено: ${value.results.length}`,
-    ...value.results.map((row) => `- ${row.kind}: ${row.title}${row.path ? ` (${row.path})` : ''}`),
-  ].join('\n')
-}
-
-/**
  * `sdd_status` — full SDD state of the session's project.
  * @param {{ status: (exec: any) => Promise<any> }} service
  */

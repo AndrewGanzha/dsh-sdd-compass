@@ -11,7 +11,7 @@
  */
 
 import { SddService } from './src/service.js'
-import { checkTool, projectsTool, searchTool, statusTool } from './src/tools.js'
+import { checkTool, projectsTool, statusTool } from './src/tools.js'
 
 export const name = 'sdd-compass'
 export const inject = ['tools', 'commands', 'systemPrompt']
@@ -51,7 +51,6 @@ export function apply(ctx) {
   ctx.tools.register(statusTool(service))
   ctx.tools.register(checkTool(service))
   ctx.tools.register(projectsTool(service))
-  ctx.tools.register(searchTool(service))
 
   // Opt-in hard gate: refuse code writes while the change is still in
   // proposal/spec/design and `strictness` is `gate`.
