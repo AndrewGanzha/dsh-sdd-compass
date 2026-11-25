@@ -729,6 +729,13 @@ test('service moves a scratch task and reports the new column', async () => {
   }
 })
 
+test('state detects the grilling skill', async () => {
+  const scratch = await stateFor('scratch')
+  assert.equal(scratch.project.features.grilling, true)
+  const openspec = await stateFor('openspec')
+  assert.equal(openspec.project.features.grilling, false)
+})
+
 test('CI severity helpers', () => {
   assert.equal(worstSeverity([]), 'info')
   assert.equal(worstSeverity([{ severity: 'info' }, { severity: 'warn' }]), 'warn')

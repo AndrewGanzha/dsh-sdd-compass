@@ -4,8 +4,6 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
-    // Optional host component library is not used: the panel needs a wider
-    // canvas than the stock modal provides.
     const ROUTE = 'api/sdd'
     const POLL_MS = 20_000
     const C = {
@@ -43,7 +41,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     let state = {
       open: false,
-      tab: 'status',
+      tab: 'now',
       status: 'idle',
       data: null,
       error: null,
@@ -51,7 +49,8 @@ window.__ModuleLoader__.load({
       projects: null,
       projectsLoading: false,
       moving: false,
-      moveError: null,
+      actionError: null,
+      notice: null,
     }
     let currentSessionId = null
     const listeners = new Set()
@@ -70,6 +69,11 @@ window.__ModuleLoader__.load({
       const [snapshot, setSnapshot] = React.useState(state)
       React.useEffect(() => subscribe(() => setSnapshot(state)), [])
       return snapshot
+    }
+
+    function flashNotice(text) {
+      setState({ notice: text })
+      setTimeout(() => setState({ notice: null }), 1600)
     }
 
     let inFlight = false
@@ -116,33 +120,24 @@ window.__ModuleLoader__.load({
       }
     }
 
-    // ------------------------------------------------------------------
-    // Task board: move one task by rewriting its status marker
-    // ------------------------------------------------------------------
     async function moveTask(task, status) {
-      setState({ moving: true, moveError: null })
+      setState({ moving: true, actionError: null })
       try {
         const response = await fetch(new URL('api/sdd/tasks/move', document.baseURI), {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({
-            sessionId: currentSessionId,
-            path: task.path,
-            line: task.line,
-            id: task.id,
-            status,
-          }),
+          body: JSON.stringify({ sessionId: currentSessionId, path: task.path, line: task.line, id: task.id, status }),
         })
         const payload = await response.json().catch(() => ({}))
         if (!response.ok || !payload?.ok) {
-          setState({ moving: false, moveError: payload?.error ?? `HTTP ${response.status}` })
+          setState({ moving: false, actionError: payload?.error ?? `HTTP ${response.status}` })
           return
         }
-        setState({ moving: false, moveError: null })
+        setState({ moving: false, actionError: null })
         await load(currentSessionId, true)
       } catch (error) {
-        setState({ moving: false, moveError: String(error?.message ?? error) })
+        setState({ moving: false, actionError: String(error?.message ?? error) })
       }
     }
 
@@ -187,6 +182,20 @@ window.__ModuleLoader__.load({
       return `${text.slice(0, head)}…${text.slice(-tail)}`
     }
 
+    function joinPath(root, rel) {
+      const sep = String(root).includes('\\') ? '\\' : '/'
+      const base = String(root).replace(/[\\/]+$/, '')
+      const tail = String(rel).replace(/^[\\/]+/, '').split(/[\\/]+/).join(sep)
+      return `${base}${sep}${tail}`
+    }
+
+    function shortTaskTitle(text) {
+      const clean = String(text ?? '').replace(/\s+/g, ' ').trim()
+      const head = clean.split(/(?:Проверка:|\.\s)/)[0]
+      const base = head.length >= 20 ? head : clean
+      return base.length > 110 ? `${base.slice(0, 108).trimEnd()}…` : base
+    }
+
     async function copyText(text) {
       try {
         await navigator.clipboard.writeText(text)
@@ -196,9 +205,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    // ------------------------------------------------------------------
-    // Shared bits
-    // ------------------------------------------------------------------
     const chip = (extra) => ({
       display: 'inline-flex',
       alignItems: 'center',
@@ -213,7 +219,7 @@ window.__ModuleLoader__.load({
     })
 
     const button = (extra) => ({
-      padding: '6px 14px',
+      padding: '6px 12px',
       borderRadius: 8,
       cursor: 'pointer',
       fontSize: 12,
@@ -223,39 +229,18 @@ window.__ModuleLoader__.load({
       ...extra,
     })
 
-    function PhaseBar({ phase }) {
-      const { index, total } = phaseProgress(phase)
-      return h(
-        'div',
-        { style: { margin: '10px 0 2px' } },
-        h(
-          'div',
-          { style: { display: 'flex', gap: 3 } },
-          PHASES.map((item, position) =>
-            h('span', {
-              key: item,
-              title: PHASE_LABELS[item] ?? item,
-              style: {
-                flex: 1,
-                height: 4,
-                borderRadius: 2,
-                background: position < index ? C.ok : position === index ? C.accent : 'rgba(127,127,127,0.22)',
-              },
-            }),
-          ),
-        ),
-        h(
-          'div',
-          { style: { marginTop: 6, fontSize: 10, opacity: 0.6 } },
-          `${phaseProgress(phase).text} · ${PHASE_LABELS[phase] ?? phase}`,
-        ),
-      )
-    }
+    const primaryButton = (extra) =>
+      button({
+        border: '1px solid rgba(91,141,239,0.7)',
+        background: 'rgba(91,141,239,0.16)',
+        fontWeight: 600,
+        ...extra,
+      })
 
     function Section({ title, count, children, action }) {
       return h(
         'div',
-        { style: { marginTop: 16 } },
+        { style: { marginTop: 14 } },
         h(
           'div',
           { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 } },
@@ -274,96 +259,6 @@ window.__ModuleLoader__.load({
         { style: { display: 'grid', gridTemplateColumns: '112px 1fr', gap: 8, padding: '2px 0', fontSize: 12 } },
         h('span', { style: { opacity: 0.55 } }, label),
         h('span', { style: { color, fontFamily: monoValue ? mono : undefined, wordBreak: 'break-word' } }, value),
-      )
-    }
-
-    function FindingRow({ finding }) {
-      return h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            gap: 8,
-            padding: '4px 0',
-            fontSize: 12,
-            lineHeight: '17px',
-            color: finding.severity === 'info' ? 'inherit' : SEVERITY_COLOR[finding.severity],
-          },
-        },
-        h('span', { style: { flex: '0 0 auto' } }, SEVERITY_ICON[finding.severity] ?? '·'),
-        h('span', null, finding.message),
-      )
-    }
-
-    function DocRow({ doc }) {
-      const slash = doc.path.lastIndexOf('/')
-      const dir = slash > 0 ? doc.path.slice(0, slash + 1) : ''
-      const name = slash > 0 ? doc.path.slice(slash + 1) : doc.path
-      return h(
-        'div',
-        { style: { padding: '3px 0', fontSize: 12, lineHeight: '17px' } },
-        h(
-          'div',
-          { style: { display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' } },
-          h('span', { style: { fontWeight: 600, wordBreak: 'break-all' } }, name),
-          h('span', { style: chip() }, doc.why),
-        ),
-        dir ? h('div', { title: doc.path, style: { fontSize: 10, opacity: 0.5, fontFamily: mono, wordBreak: 'break-all' } }, truncateMiddle(dir, 52)) : null,
-      )
-    }
-
-    function NextCard({ next }) {
-      const [copied, setCopied] = React.useState(false)
-      const command = next.command
-      return h(
-        'div',
-        {
-          style: {
-            marginTop: 12,
-            padding: '10px 12px',
-            borderRadius: 10,
-            background: 'rgba(91,141,239,0.10)',
-            borderLeft: `3px solid ${C.accent}`,
-          },
-        },
-        h('div', { style: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.6 } }, 'Что дальше'),
-        h('div', { style: { fontSize: 13, fontWeight: 600, marginTop: 2 } }, next.label),
-        next.hint && next.hint !== command ? h('div', { style: { fontSize: 11, opacity: 0.7, marginTop: 3 } }, next.hint) : null,
-        command
-          ? h(
-              'div',
-              { style: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' } },
-              h(
-                'code',
-                {
-                  style: {
-                    flex: '1 1 200px',
-                    fontFamily: mono,
-                    fontSize: 11,
-                    padding: '5px 8px',
-                    borderRadius: 6,
-                    background: 'rgba(127,127,127,0.16)',
-                    wordBreak: 'break-all',
-                  },
-                },
-                command,
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  style: button({ padding: '4px 10px' }),
-                  onClick: async () => {
-                    if (await copyText(command)) {
-                      setCopied(true)
-                      setTimeout(() => setCopied(false), 1500)
-                    }
-                  },
-                },
-                copied ? 'Скопировано' : 'Копировать',
-              ),
-            )
-          : null,
       )
     }
 
@@ -387,7 +282,7 @@ window.__ModuleLoader__.load({
           {
             style: { fontSize: 11, lineHeight: '16px', color: C.bad, cursor: 'pointer' },
             title: `SDD: ${snapshot.error}`,
-            onClick: () => setState({ open: true, tab: 'status' }),
+            onClick: () => setState({ open: true, tab: 'now' }),
           },
           'SDD: недоступно',
         )
@@ -409,7 +304,7 @@ window.__ModuleLoader__.load({
           ]
             .filter(Boolean)
             .join('\n'),
-          onClick: () => setState({ open: true, tab: 'status' }),
+          onClick: () => setState({ open: true, tab: 'now' }),
           style: {
             display: 'inline-flex',
             alignItems: 'center',
@@ -431,80 +326,111 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------------
-    // Panel tabs
+    // Now tab: actions first, facts second
     // ------------------------------------------------------------------
-    function StatusTab({ data }) {
+    function FindingRow({ finding, onCopyCommand, onOpen }) {
+      const action =
+        finding.rule === 'archive.pending'
+          ? h(
+              'button',
+              { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onCopyCommand() },
+              'Команда',
+            )
+          : finding.paths?.length
+            ? h(
+                'button',
+                { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onOpen(finding.paths[0]) },
+                'Открыть',
+              )
+            : null
+      return h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-start',
+            padding: '4px 0',
+            fontSize: 12,
+            lineHeight: '17px',
+            color: finding.severity === 'info' ? 'inherit' : SEVERITY_COLOR[finding.severity],
+          },
+        },
+        h('span', { style: { flex: '0 0 auto' } }, SEVERITY_ICON[finding.severity] ?? '·'),
+        h('span', { style: { flex: 1 } }, finding.message),
+        action,
+      )
+    }
+
+    function NowTab({ data, onCommand, onCopyCommand, onOpen, onStartTask, onTasks, onFeature }) {
       const change = data.change
-      const findings = data.findings ?? []
-      const docs = data.docs ?? []
+      const findings = (data.findings ?? []).slice(0, 3)
+      const progress = phaseProgress(data.phase)
+      const tasks = data.tasks
+      const nextCommand = data.next?.command
+      const todoTask = tasks?.items?.find((task) => task.kanban === 'todo')
+
+      const actions = []
+      if (data.phase === 'verify' && nextCommand) {
+        actions.push(['archive', 'Заархивировать', () => onCopyCommand(nextCommand)])
+      }
+      if (data.phase === 'apply' && todoTask) {
+        actions.push(['start', 'Начать задачу', () => onStartTask(todoTask)])
+      }
+      if (data.phase === 'idle' || data.phase === 'archive') {
+        actions.push(['feature', 'Новая задача', () => onFeature()])
+      }
+      actions.push(['next', 'Дальше', () => onCommand('/sdd next')])
+      actions.push(['check', 'Проверить', () => onCommand('/sdd check')])
+      if (tasks?.items?.length) actions.push(['tasks', 'Задачи', onTasks])
+
       return h(
         'div',
         null,
         h(
           'div',
-          { style: { display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' } },
-          h('span', { style: { fontSize: 14, fontWeight: 600 } }, data.project?.name ?? 'проект'),
-          h('span', { style: chip() }, practiceLabel(data.practice)),
-          data.project?.branch ? h('span', { style: { fontSize: 10, opacity: 0.5, fontFamily: mono } }, data.project.branch) : null,
+          { style: { fontSize: 12, lineHeight: '18px' } },
+          h('span', { style: { fontWeight: 600 } }, data.project?.name ?? 'проект'),
+          h('span', { style: { opacity: 0.5 } }, ' · '),
+          h('span', null, data.phaseLabel),
+          h('span', { style: { opacity: 0.5 } }, ` · ${progress.text}`),
+          change ? h('span', { style: { opacity: 0.65, fontFamily: mono } }, ` · ${change.id}`) : null,
         ),
-        h('div', { style: { fontSize: 12, opacity: 0.75, marginTop: 2 } }, data.phaseLabel),
-        h(PhaseBar, { phase: data.phase }),
-        data.next ? h(NextCard, { next: data.next }) : null,
-        change
-          ? h(
-              Section,
-              { title: 'Изменение' },
-              h(Row, { label: 'ID', value: change.id, monoValue: true }),
-              change.title && change.title !== change.id ? h(Row, { label: 'Название', value: change.title }) : null,
-              h(Row, { label: 'Обновлено', value: daysText(change.updatedDays) }),
-              change.tasks && change.tasks.total > 0
-                ? h(Row, { label: 'Задачи', value: `${change.tasks.done}/${change.tasks.total}` })
-                : null,
-              change.questions?.total
-                ? h(Row, {
-                    label: 'Вопросы',
-                    value: change.questions.blockers
-                      ? `${change.questions.total} (блокирующих ${change.questions.blockers})`
-                      : String(change.questions.total),
-                  })
-                : null,
-              data.links && (data.links.impact > 0 || data.links.changed > 0)
-                ? h(Row, {
-                    label: 'Impact',
-                    value: `${data.links.impact} · изменено ${data.links.changed} · вне ${data.links.untrackedCount}`,
-                  })
-                : null,
-            )
-          : h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 12 } }, 'Активных изменений нет.'),
+        h(
+          'div',
+          { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 } },
+          actions.map(([id, label, onClick]) =>
+            h('button', { key: id, type: 'button', style: id === 'archive' || id === 'start' ? primaryButton() : button(), onClick: () => void onClick() }, label),
+          ),
+        ),
+        h(
+          'div',
+          { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 } },
+          change?.tasks?.total ? h('span', { style: chip() }, `задачи ${change.tasks.done}/${change.tasks.total}`) : null,
+          change?.questions?.total ? h('span', { style: chip() }, `вопросы ${change.questions.total}`) : null,
+          warnCount(data) > 0 ? h('span', { style: chip({ color: C.warn }) }, `⚠ ${warnCount(data)}`) : null,
+        ),
         h(
           Section,
-          { title: 'Замечания', count: findings.length },
+          { title: 'Замечания', count: (data.findings ?? []).length },
           findings.length === 0
             ? h('div', { style: { fontSize: 12, opacity: 0.65 } }, 'Всё чисто — замечаний нет.')
-            : findings.map((finding, index) => h(FindingRow, { key: `${finding.rule}-${index}`, finding })),
+            : findings.map((finding, index) =>
+                h(FindingRow, {
+                  key: `${finding.rule}-${index}`,
+                  finding,
+                  onCopyCommand: () => onCopyCommand(nextCommand ?? data.next?.command ?? ''),
+                  onOpen: (path) => onOpen(path),
+                }),
+              ),
         ),
-        docs.length > 0
-          ? h(
-              Section,
-              {
-                title: 'Документы',
-                count: docs.length,
-                action: h(
-                  'button',
-                  { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => setState({ tab: 'docs' }) },
-                  'Все →',
-                ),
-              },
-              docs.slice(0, 3).map((doc) => h(DocRow, { key: doc.path, doc })),
-              docs.length > 3
-                ? h('div', { style: { fontSize: 10, opacity: 0.5, marginTop: 4 } }, `ещё ${docs.length - 3} во вкладке «Документы»`)
-                : null,
-            )
-          : null,
-        data.rule ? h('div', { style: { fontSize: 11, opacity: 0.6, marginTop: 12 } }, data.rule) : null,
+        data.rule ? h('div', { style: { fontSize: 11, opacity: 0.45, marginTop: 12 } }, data.rule) : null,
       )
     }
 
+    // ------------------------------------------------------------------
+    // Tasks tab
+    // ------------------------------------------------------------------
     const BOARD_COLUMNS = [
       ['todo', 'Очередь'],
       ['doing', 'В работе'],
@@ -531,15 +457,7 @@ window.__ModuleLoader__.load({
       return actions
     }
 
-    /** Short card title: first sentence, without the verification tail. */
-    function shortTaskTitle(text) {
-      const clean = String(text ?? '').replace(/\s+/g, ' ').trim()
-      const head = clean.split(/(?:Проверка:|\.\s)/)[0]
-      const base = head.length >= 20 ? head : clean
-      return base.length > 110 ? `${base.slice(0, 108).trimEnd()}…` : base
-    }
-
-    function TaskCard({ task, writable, practice, moving, onStart }) {
+    function TaskCard({ task, writable, practice, moving, onStart, onOpenFile }) {
       const actions = taskActions(task, writable, practice)
       return h(
         'div',
@@ -573,29 +491,34 @@ window.__ModuleLoader__.load({
           { style: { fontSize: 9, opacity: 0.5, fontFamily: mono, wordBreak: 'break-all' } },
           `${task.id}${task.blockedBy ? ` · блок: ${task.blockedBy}` : ''}`,
         ),
-        actions.length > 0
-          ? h(
-              'div',
-              { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
-              actions.map(([status, label]) =>
-                h(
-                  'button',
-                  {
-                    key: status,
-                    type: 'button',
-                    disabled: moving,
-                    style: button({ padding: '2px 8px', fontSize: 10 }),
-                    onClick: () => (status === 'doing' ? void onStart(task) : void moveTask(task, status)),
-                  },
-                  label,
-                ),
-              ),
-            )
-          : null,
+        h(
+          'div',
+          { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+          actions.map(([status, label]) =>
+            h(
+              'button',
+              {
+                key: status,
+                type: 'button',
+                disabled: moving,
+                style: button({ padding: '2px 8px', fontSize: 10 }),
+                onClick: () => (status === 'doing' ? void onStart(task) : void moveTask(task, status)),
+              },
+              label,
+            ),
+          ),
+          task.path
+            ? h(
+                'button',
+                { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onOpenFile(task.path) },
+                'Файл',
+              )
+            : null,
+        ),
       )
     }
 
-    function TasksTab({ data, moving, moveError, onStart }) {
+    function TasksTab({ data, moving, actionError, onStart, onOpenFile }) {
       const tasks = data.tasks
       if (!tasks?.items?.length) {
         return h(
@@ -607,7 +530,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         null,
-        moveError ? h('div', { style: { fontSize: 11, color: C.bad, marginBottom: 6 } }, moveError) : null,
+        actionError ? h('div', { style: { fontSize: 11, color: C.bad, marginBottom: 6 } }, actionError) : null,
         h(
           'div',
           { style: { display: 'flex', gap: 10, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 } },
@@ -632,6 +555,7 @@ window.__ModuleLoader__.load({
                       practice: tasks.practice,
                       moving,
                       onStart,
+                      onOpenFile,
                     }),
                   ),
             )
@@ -640,117 +564,87 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function StatsTab({ data }) {
+    // ------------------------------------------------------------------
+    // More tab: documents, projects, metrics
+    // ------------------------------------------------------------------
+    function MoreTab({ data, projects, projectsLoading, onOpenPath, onRefreshProjects }) {
+      const docs = data.docs ?? []
       const snapshot = data.stats?.snapshot
       const history = data.stats?.history
       const trace = data.trace
-      const links = data.links
       return h(
         'div',
         null,
         h(
           Section,
-          { title: 'Сейчас' },
-          h(Row, { label: 'Фаза', value: `${data.phaseLabel}${snapshot?.daysInPhase !== null && snapshot?.daysInPhase !== undefined ? ` · ${snapshot.daysInPhase} дн` : ''}` }),
-          snapshot ? h(Row, { label: 'В работе', value: `${snapshot.wip} изменени(й)` }) : null,
-          snapshot?.tasks ? h(Row, { label: 'Задачи', value: `${snapshot.tasks.done}/${snapshot.tasks.total}` }) : null,
-          snapshot?.questions?.total
-            ? h(Row, {
-                label: 'Вопросы',
-                value: snapshot.questions.blockers
-                  ? `${snapshot.questions.total} (блокирующих ${snapshot.questions.blockers})`
-                  : String(snapshot.questions.total),
-              })
-            : null,
+          {
+            title: 'Документы',
+            count: docs.length,
+            action: h('button', { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onRefreshProjects() }, 'Обновить'),
+          },
+          docs.length === 0
+            ? h('div', { style: { fontSize: 11, opacity: 0.6 } }, 'Документы не найдены.')
+            : docs.map((doc) =>
+                h(
+                  'div',
+                  { key: doc.path, style: { display: 'flex', gap: 8, alignItems: 'baseline', padding: '2px 0', fontSize: 12 } },
+                  h('span', { style: { fontWeight: 600, wordBreak: 'break-all' } }, doc.path.split('/').pop() ?? doc.path),
+                  h('span', { style: { fontSize: 10, opacity: 0.5 } }, doc.why),
+                  h('span', { style: { flex: 1 } }),
+                  h(
+                    'button',
+                    { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onOpenPath(doc.path) },
+                    'Открыть',
+                  ),
+                ),
+              ),
+        ),
+        h(
+          Section,
+          { title: 'Проекты', count: projects?.length ?? 0 },
+          !projects?.length
+            ? h('div', { style: { fontSize: 11, opacity: 0.6 } }, projectsLoading ? 'Собираю проекты…' : 'Проекты не найдены.')
+            : projects.map((row) =>
+                h(
+                  'div',
+                  { key: row.path ?? row.name, style: { display: 'flex', gap: 6, alignItems: 'baseline', padding: '2px 0', fontSize: 12 } },
+                  h('span', { style: { fontWeight: 600 } }, row.name),
+                  h('span', { style: chip() }, practiceLabel(row.practice)),
+                  h('span', { style: { opacity: 0.7 } }, row.phaseLabel),
+                  row.warnings > 0 ? h('span', { style: { color: C.warn } }, `⚠${row.warnings}`) : null,
+                  h('span', { style: { flex: 1 } }),
+                  h(
+                    'button',
+                    { type: 'button', style: button({ padding: '2px 8px', fontSize: 10 }), onClick: () => onOpenPath(row.path, true) },
+                    'Папка',
+                  ),
+                ),
+              ),
+        ),
+        h(
+          Section,
+          { title: 'Метрики' },
+          history?.available
+            ? h(
+                'div',
+                null,
+                h(Row, {
+                  label: 'Цикл',
+                  value: history.cycleMedianDays !== null ? `${history.cycleMedianDays} дн медиана · p90 ${history.cycleP90Days} · n=${history.sample}` : 'мало данных',
+                }),
+                history.archiveRate !== null ? h(Row, { label: 'До архива', value: `${Math.round(history.archiveRate * 100)}%` }) : null,
+                history.drift7d !== null ? h(Row, { label: 'Дрейф 7 дн', value: `${history.drift7d} файл(ов)` }) : null,
+              )
+            : h('div', { style: { fontSize: 11, opacity: 0.6 } }, history?.reason ?? 'История недоступна.'),
+          trace ? h(Row, { label: 'Аннотации', value: `${trace.files} файл(ов)${trace.requirementIds ? ` · ${trace.covered}/${trace.requirementIds}` : ''}` }) : null,
           snapshot?.stuck?.length
             ? h(
                 'div',
                 { style: { marginTop: 6 } },
                 h('div', { style: { fontSize: 10, opacity: 0.5, marginBottom: 2 } }, 'Застряло'),
-                snapshot.stuck.map((item) =>
-                  h(
-                    'div',
-                    { key: item.id, style: { fontSize: 11, color: C.warn, padding: '1px 0' } },
-                    `${item.id} — ${item.days} дн (${PHASE_LABELS[item.phase] ?? item.phase})`,
-                  ),
-                ),
+                snapshot.stuck.map((item) => h('div', { key: item.id, style: { fontSize: 11, color: C.warn } }, `${item.id} — ${item.days} дн`)),
               )
             : null,
-        ),
-        h(
-          Section,
-          { title: 'История' },
-          history?.available
-            ? h(
-                'div',
-                null,
-                history.cycleMedianDays !== null
-                  ? h(Row, { label: 'Цикл', value: `${history.cycleMedianDays} дн медиана · p90 ${history.cycleP90Days} · n=${history.sample}` })
-                  : h(Row, { label: 'Цикл', value: 'мало данных' }),
-                history.archiveRate !== null ? h(Row, { label: 'До архива', value: `${Math.round(history.archiveRate * 100)}%` }) : null,
-                history.drift7d !== null ? h(Row, { label: 'Дрейф 7 дн', value: `${history.drift7d} файл(ов)` }) : null,
-              )
-            : h('div', { style: { fontSize: 11, opacity: 0.65 } }, history?.reason ?? 'История недоступна.'),
-        ),
-        trace || links
-          ? h(
-              Section,
-              { title: 'Связи' },
-              trace
-                ? h(Row, {
-                    label: 'Аннотации',
-                    value: `${trace.files} файл(ов)${trace.requirementIds ? ` · требования ${trace.covered}/${trace.requirementIds}` : ''} · связь ${trace.linkedChange}`,
-                  })
-                : null,
-              links
-                ? h(Row, {
-                    label: 'Impact',
-                    value: `${links.impact} объявлено · ${links.changedInImpact} совпало · ${links.untrackedCount} вне`,
-                  })
-                : null,
-            )
-          : null,
-      )
-    }
-
-    function DocsTab({ data }) {
-      const docs = data.docs ?? []
-      if (docs.length === 0) {
-        return h(
-          'div',
-          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
-          'Документы не найдены. Добавь docs/ или артефакты изменения — они появятся здесь.',
-        )
-      }
-      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, docs.map((doc) => h(DocRow, { key: doc.path, doc })))
-    }
-
-    function ProjectsTab({ projects, loading }) {
-      if (loading && !projects) return h('div', { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } }, 'Собираю проекты…')
-      if (!projects?.length) {
-        return h(
-          'div',
-          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
-          'Проекты не найдены. Открой проект в отдельной сессии — он появится в этом списке.',
-        )
-      }
-      return h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-        projects.map((row) =>
-          h(
-            'div',
-            { key: row.path ?? row.name, style: { fontSize: 12, lineHeight: '17px' } },
-            h(
-              'div',
-              { style: { display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' } },
-              h('span', { style: { fontWeight: 600 } }, row.name),
-              h('span', { style: chip() }, practiceLabel(row.practice)),
-              h('span', { style: { opacity: 0.75 } }, row.phaseLabel),
-              row.warnings > 0 ? h('span', { style: { color: C.warn } }, `⚠${row.warnings}`) : null,
-            ),
-            row.change ? h('div', { style: { fontSize: 10, opacity: 0.55, fontFamily: mono, wordBreak: 'break-all' } }, row.change) : null,
-          ),
         ),
       )
     }
@@ -758,7 +652,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Panel shell
     // ------------------------------------------------------------------
-    function Panel({ startTaskChat }) {
+    function Panel({ startTaskChat, startFeatureChat, runCommand, openPath }) {
       const snapshot = useStore()
 
       React.useEffect(() => {
@@ -766,62 +660,70 @@ window.__ModuleLoader__.load({
       }, [snapshot.open, currentSessionId])
 
       React.useEffect(() => {
-        if (snapshot.open && snapshot.tab === 'projects' && !snapshot.projects && !snapshot.projectsLoading) void loadProjects()
+        if (snapshot.open && snapshot.tab === 'more' && !snapshot.projects && !snapshot.projectsLoading) void loadProjects()
       }, [snapshot.open, snapshot.tab, snapshot.projects, snapshot.projectsLoading])
 
       if (!snapshot.open) return null
-      const close = () => setState({ open: false })
       const data = snapshot.data
-      const tabs = [
-        ['status', 'Статус'],
-        ['tasks', 'Задачи'],
-        ['stats', 'Метрики'],
-        ['docs', 'Документы'],
-        ['projects', 'Проекты'],
-      ]
-      const reload = () => (snapshot.tab === 'projects' ? loadProjects() : load(currentSessionId, true))
-      const busy = snapshot.refreshing || snapshot.projectsLoading
+      const root = data?.project?.root ?? null
+      const close = () => setState({ open: false })
 
-      // «Начать» = mark the task as in progress and open a fresh chat on it.
-      const startWork = async (task) => {
-        await moveTask(task, 'doing')
+      const guard = async (label, task) => {
+        setState({ actionError: null })
         try {
-          await startTaskChat(task, data?.project?.root)
+          await task()
         } catch (error) {
-          setState({ moveError: `Задача взята, но чат не создан: ${String(error?.message ?? error)}` })
+          setState({ actionError: `${label}: ${String(error?.message ?? error)}` })
         }
       }
 
+      const onCommand = (text) =>
+        guard(text, async () => {
+          await runCommand(text, currentSessionId)
+          setTimeout(() => void load(currentSessionId, true), 400)
+        })
+      const onCopyCommand = (command) =>
+        guard('Копирование', async () => {
+          if (!command) throw new Error('команды нет')
+          if (!(await copyText(command))) throw new Error('буфер обмена недоступен')
+          flashNotice('Команда скопирована')
+        })
+      const onOpen = (path, absolute = false) =>
+        guard('Открытие', async () => {
+          if (!path) throw new Error('путь не найден')
+          await openPath(absolute ? path : joinPath(root, path))
+        })
+      const onStartTask = (task) =>
+        guard('Старт задачи', async () => {
+          await moveTask(task, 'doing')
+          await startTaskChat(task, root)
+        })
+      const onFeature = () =>
+        guard('Новая задача', async () => {
+          await startFeatureChat(root, data?.project?.features)
+        })
+
+      const tabs = [
+        ['now', 'Сейчас'],
+        ['tasks', 'Задачи'],
+        ['more', 'Ещё'],
+      ]
+
       const body = h(
         'div',
-        {
-          style: {
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            width: '100%',
-            maxWidth: 860,
-            minWidth: 300,
-            boxSizing: 'border-box',
-          },
-        },
+        { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 900, minWidth: 300, boxSizing: 'border-box' } },
         h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8 } },
           h('div', { style: { fontSize: 13, fontWeight: 600 } }, 'SDD-компас'),
           h('span', { style: { flex: 1 } }),
+          h('button', { type: 'button', style: primaryButton({ padding: '4px 10px' }), onClick: () => void onFeature() }, '+ Задача'),
           h(
             'button',
-            {
-              type: 'button',
-              onClick: close,
-              title: 'Закрыть',
-              style: { border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 16, opacity: 0.6, lineHeight: 1 },
-            },
+            { type: 'button', onClick: close, title: 'Закрыть', style: { border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 16, opacity: 0.6, lineHeight: 1 } },
             '×',
           ),
         ),
-        // Tabs wrap instead of clipping; the refresh action lives in the footer.
         h(
           'div',
           { style: { display: 'flex', flexWrap: 'wrap', gap: 4, borderBottom: '1px solid rgba(127,127,127,0.22)', paddingBottom: 6 } },
@@ -848,35 +750,50 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
+        snapshot.actionError ? h('div', { style: { fontSize: 11, color: C.bad } }, snapshot.actionError) : null,
+        snapshot.notice ? h('div', { style: { fontSize: 11, color: C.ok } }, snapshot.notice) : null,
         !data
           ? h(
               'div',
               { style: { fontSize: 12, opacity: 0.65, padding: '14px 0' } },
               snapshot.status === 'error' ? `Не удалось получить состояние: ${snapshot.error}` : 'Состояние ещё не вычислено — открой проект и напиши сообщение.',
             )
-          : snapshot.tab === 'status'
-            ? h(StatusTab, { data })
+          : snapshot.tab === 'now'
+            ? h(NowTab, {
+                data,
+                onCommand,
+                onCopyCommand,
+                onOpen,
+                onStartTask,
+                onTasks: () => setState({ tab: 'tasks' }),
+                onFeature,
+              })
             : snapshot.tab === 'tasks'
-              ? h(TasksTab, { data, moving: snapshot.moving, moveError: snapshot.moveError, onStart: startWork })
-              : snapshot.tab === 'stats'
-                ? h(StatsTab, { data })
-                : snapshot.tab === 'projects'
-                  ? h(ProjectsTab, { projects: snapshot.projects, loading: snapshot.projectsLoading })
-                  : h(DocsTab, { data }),
+              ? h(TasksTab, {
+                  data,
+                  moving: snapshot.moving,
+                  actionError: null,
+                  onStart: onStartTask,
+                  onOpenFile: (path) => onOpen(path),
+                })
+              : h(MoreTab, {
+                  data,
+                  projects: snapshot.projects,
+                  projectsLoading: snapshot.projectsLoading,
+                  onOpenPath: (path, absolute = false) => onOpen(path, absolute),
+                  onRefreshProjects: () => void loadProjects(),
+                }),
         h(
           'div',
-          { style: { display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(127,127,127,0.18)', flexWrap: 'wrap', alignItems: 'center' } },
-          h('button', { type: 'button', onClick: () => void reload(), disabled: busy, style: button() }, busy ? 'Обновляю…' : 'Обновить'),
-          h('button', { type: 'button', onClick: close, style: button() }, 'Закрыть'),
+          { style: { display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(127,127,127,0.18)', alignItems: 'center' } },
+          h('button', { type: 'button', onClick: () => void load(currentSessionId, true), disabled: snapshot.refreshing, style: button() }, snapshot.refreshing ? 'Обновляю…' : 'Обновить'),
           h('span', { style: { flex: 1 } }),
           data?.project?.root
-            ? h('span', { title: data.project.root, style: { fontSize: 9, opacity: 0.4, fontFamily: mono, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, truncateMiddle(data.project.root, 34))
+            ? h('span', { title: data.project.root, style: { fontSize: 9, opacity: 0.4, fontFamily: mono, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, truncateMiddle(data.project.root, 38))
             : null,
         ),
       )
 
-      // The stock modal is too narrow for a four-column board, so the panel
-      // renders its own overlay with a wider canvas.
       return h(
         'div',
         {
@@ -916,7 +833,6 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Registration
     // ------------------------------------------------------------------
-    /** Prompt a fresh chat with the task. */
     function buildTaskPrompt(task) {
       return [
         `Начни работу над задачей «${task.title}» (ID ${task.id}, файл ${task.path}).`,
@@ -925,30 +841,27 @@ window.__ModuleLoader__.load({
       ].join(' ')
     }
 
+    function buildFeaturePrompt(features) {
+      const skill = features?.grilling
+        ? 'Используй скилл grilling.'
+        : 'Используй скилл grilling; если его нет в проекте — возьми его из https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling.'
+      return [
+        `${skill} Заведи новую задачу (фичу) в этом проекте.`,
+        'Изучи документацию проекта и проведи grilling: задавай мне вопросы по одному, пока не прояснишь требования, границы и критерии приёмки.',
+        'Затем оформи документацию: spec.md и задачи (issues/tasks) по правилам проекта.',
+        'Ничего не реализуй и не меняй код.',
+      ].join(' ')
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
-        /** Create a new session in the project and send the task as its first prompt. */
-        async function startTaskChat(task, root) {
-          if (!root) throw new Error('неизвестен корень проекта')
-          const connection = Reflect.get(ctx, 'connection')
-          const api = connection?.api
-          if (!api?.sessions?.create || !api?.sessions?.prompt) throw new Error('API сессий недоступен')
+        const connectionOf = () => Reflect.get(ctx, 'connection')
+        const sessionsOf = () => Reflect.get(ctx, 'sessions')
+        const workspacesOf = () => Reflect.get(ctx, 'workspaces')
 
-          const created = await api.sessions.create({ cwd: root })
-          const createdResult = created?.result
-          if (!createdResult?.ok) throw new Error(createdResult?.error?.message ?? 'не удалось создать сессию')
-          const sessionId = createdResult.value?.sessionId
-          if (!sessionId) throw new Error('хост не вернул id сессии')
-
-          const sent = await api.sessions.prompt({
-            sessionId,
-            mode: 'queue',
-            content: [{ type: 'text', text: buildTaskPrompt(task) }],
-          })
-          if (!sent?.result?.ok) throw new Error(sent?.result?.error?.message ?? 'не удалось отправить задачу')
-
-          const sessions = Reflect.get(ctx, 'sessions')
+        async function openSessionWhenListed(sessionId) {
+          const sessions = sessionsOf()
           const deadline = Date.now() + 5000
           while (Date.now() < deadline) {
             const snapshot = sessions?.list?.getSnapshot?.()
@@ -958,9 +871,43 @@ window.__ModuleLoader__.load({
           try {
             sessions?.open?.(sessionId)
           } catch {
-            // The session is created and prompted even if navigation lags.
+            // The session exists even when navigation lags.
           }
+        }
+
+        async function startChat(prompt, root) {
+          if (!root) throw new Error('неизвестен корень проекта')
+          const api = connectionOf()?.api
+          if (!api?.sessions?.create || !api?.sessions?.prompt) throw new Error('API сессий недоступен')
+          const created = await api.sessions.create({ cwd: root })
+          const createdResult = created?.result
+          if (!createdResult?.ok) throw new Error(createdResult?.error?.message ?? 'не удалось создать сессию')
+          const sessionId = createdResult.value?.sessionId
+          if (!sessionId) throw new Error('хост не вернул id сессии')
+          const sent = await api.sessions.prompt({ sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }] })
+          if (!sent?.result?.ok) throw new Error(sent?.result?.error?.message ?? 'не удалось отправить задачу')
+          await openSessionWhenListed(sessionId)
           return sessionId
+        }
+
+        async function runCommand(text, sessionId) {
+          if (!sessionId) throw new Error('нет активной сессии')
+          const api = connectionOf()?.api
+          if (!api?.sessions?.prompt) throw new Error('API сессий недоступен')
+          const sent = await api.sessions.prompt({
+            sessionId,
+            mode: 'queue',
+            content: [{ type: 'text', text }],
+          })
+          const result = sent?.result
+          if (!result?.ok) throw new Error(result?.error?.message ?? 'команда не принята')
+          if (result.value?.command?.kind === 'error') throw new Error(result.value.command.text ?? 'команда завершилась ошибкой')
+        }
+
+        async function openPath(absolute) {
+          const workspaces = workspacesOf()
+          if (!workspaces?.openPath) throw new Error('открытие путей недоступно')
+          await workspaces.openPath(absolute)
         }
 
         ctx.slots.inject('conversation.composer.dock', () =>
@@ -968,7 +915,16 @@ window.__ModuleLoader__.load({
         )
         ctx.slots.inject('shell.overlay', () =>
           ctx.slots.register(
-            { name: 'shell.overlay', id: 'sdd-compass.panel', inject: () => ({ startTaskChat }) },
+            {
+              name: 'shell.overlay',
+              id: 'sdd-compass.panel',
+              inject: () => ({
+                startTaskChat: (task, root) => startChat(buildTaskPrompt(task), root),
+                startFeatureChat: (root, features) => startChat(buildFeaturePrompt(features), root),
+                runCommand,
+                openPath,
+              }),
+            },
             Panel,
           ),
         )

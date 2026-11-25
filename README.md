@@ -81,18 +81,32 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
 
 - **Dock line** — phase, task progress and warning count; hidden when the
   project has no SDD markers or no active change.
-- **Panel** — status, statistics, documents.
+- **Panel** — action-first: `Сейчас` (actions and top findings), `Задачи`
+  (kanban), `Ещё` (documents, projects, metrics).
 - **System prompt section** — one short, byte-stable line with the phase, next
   step and rule for the current phase (`Код не менять до утверждённой спеки`).
 - **Session-start briefing** — one `agent.inject()` message with the change and
   the documents to read first.
 - **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | digest | projects | init | refresh | help`.
 - **Tools** — `sdd_status`, `sdd_check`, `sdd_projects`, `sdd_digest`, `sdd_tasks` and `sdd_task_move` for the model.
-- **Panel tabs** — status, tasks, statistics, documents, projects.
+
+## Panel actions
+
+- **«+ Задача»** — opens a fresh chat in the project with a grilling prompt:
+  the agent interviews you one question at a time and then writes `spec.md`
+  and the task list. If the project has no `grilling` skill, the prompt points
+  to [basic-skills](https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling).
+- **«Дальше» / «Проверить»** — run `/sdd next` and `/sdd check` in the current
+  chat through the session API.
+- **«Заархивировать»** — copies the exact `openspec archive …` command.
+- **«Начать задачу»** — moves the next queued task to work and opens a chat
+  with it (also from the task card).
+- **«Открыть» / «Файл» / «Папка»** — open the document, task file or project
+  folder with the host's default application.
 
 `/sdd advance` prints the exact command for the next step (for example
-`openspec archive --change <name>`); the plugin never executes it, the person
-runs and confirms it.
+`openspec archive --change <name>`); the plugin never executes the CLI itself,
+the person runs and confirms it.
 
 ## Traceability
 

@@ -7,6 +7,8 @@
  * present on disk.
  */
 
+import path from 'node:path'
+import { exists } from './fsx.js'
 import { readChanges } from './adapters/index.js'
 import { runChecks } from './check.js'
 import { loadConfig } from './config.js'
@@ -289,6 +291,11 @@ export async function buildState(input) {
   const traceSummary = summarizeTrace(trace, active?.requirementIds ?? [], active, project)
   const links = buildLinks(project, active, trace)
   const board = supported ? await readBoard(root) : { doing: [] }
+  const features = {
+    grilling:
+      (await exists(path.join(root, '.agents', 'skills', 'grilling', 'SKILL.md'))) ||
+      (await exists(path.join(root, 'skills', 'grilling', 'SKILL.md'))),
+  }
 
   const findings = runChecks({
     project,
@@ -318,6 +325,7 @@ export async function buildState(input) {
       branch: project.branch,
       dirty: project.dirty,
       isGit: project.isGit,
+      features,
     },
     practice: detection.practice,
     practiceSupported: supported,
