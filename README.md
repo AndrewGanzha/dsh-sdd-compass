@@ -92,12 +92,12 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
 
 ## Panel actions
 
-- **«+ Задача»** — opens a fresh chat in the project with a grilling prompt:
-  the agent interviews you one question at a time and then writes `spec.md`
-  and the task list. If the project has no `grilling` skill, the prompt points
-  to [basic-skills](https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling).
-- **«Дальше» / «Проверить»** — run `/sdd next` and `/sdd check` in the current
-  chat through the session API.
+- **«+ Задача»** — opens a fresh chat in the project with a grilling prompt
+  (the Host creates the session and sends the first message). If the project
+  has no `grilling` skill, the prompt points to
+  [basic-skills](https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling).
+- **«Дальше» / «Проверить»** — ask the agent in the current chat to call
+  `sdd_status` / `sdd_check`; the Host injects the instruction.
 - **«Заархивировать»** — copies the exact `openspec archive …` command.
 - **«Начать задачу»** — moves the next queued task to work and opens a chat
   with it (also from the task card).

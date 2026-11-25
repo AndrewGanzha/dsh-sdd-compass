@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const ROUTE = 'api/sdd'
-    const VERSION = '0.10.4'
+    const VERSION = '0.10.5'
     const POLL_MS = 20_000
     const C = {
       ok: '#22c55e',
@@ -381,8 +381,8 @@ window.__ModuleLoader__.load({
       if (data.phase === 'idle' || data.phase === 'archive') {
         actions.push(['feature', 'Новая задача', () => onFeature()])
       }
-      actions.push(['next', 'Дальше', () => onCommand('/sdd next')])
-      actions.push(['check', 'Проверить', () => onCommand('/sdd check')])
+      actions.push(['next', 'Дальше', () => onCommand('Вызови sdd_status и коротко объясни, что делать дальше по SDD.')])
+      actions.push(['check', 'Проверить', () => onCommand('Вызови sdd_check и покажи замечания по проекту.')])
       if (tasks?.items?.length) actions.push(['tasks', 'Задачи', onTasks])
 
       return h(
@@ -653,7 +653,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Panel shell
     // ------------------------------------------------------------------
-    function Panel({ startTaskChat, startFeatureChat, runCommand, openPath }) {
+    function Panel({ startTask, startFeature, sendPrompt, openPath }) {
       const snapshot = useStore()
 
       React.useEffect(() => {
@@ -680,7 +680,7 @@ window.__ModuleLoader__.load({
 
       const onCommand = (text) =>
         guard(text, async () => {
-          await runCommand(text, currentSessionId)
+          await sendPrompt(text)
           setTimeout(() => void load(currentSessionId, true), 400)
         })
       const onCopyCommand = (command) =>
@@ -697,12 +697,9 @@ window.__ModuleLoader__.load({
       const onStartTask = (task) =>
         guard('Старт задачи', async () => {
           await moveTask(task, 'doing')
-          await startTaskChat(task, root)
+          await startTask(task)
         })
-      const onFeature = () =>
-        guard('Новая задача', async () => {
-          await startFeatureChat(root, data?.project?.features)
-        })
+      const onFeature = () => guard('Новая задача', () => startFeature())
 
       const tabs = [
         ['now', 'Сейчас'],
@@ -835,56 +832,13 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Registration
     // ------------------------------------------------------------------
-    function buildTaskPrompt(task) {
-      return [
-        `Начни работу над задачей «${task.title}» (ID ${task.id}, файл ${task.path}).`,
-        'Сначала прочитай задачу и относящуюся к ней спеку, составь короткий план, затем выполняй.',
-        'Отмечай прогресс в SDD-компасе (/sdd next) и в самой задаче.',
-      ].join(' ')
-    }
-
-    function buildFeaturePrompt(features) {
-      const skill = features?.grilling
-        ? 'Используй скилл grilling.'
-        : 'Используй скилл grilling; если его нет в проекте — возьми его из https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling.'
-      return [
-        `${skill} Заведи новую задачу (фичу) в этом проекте.`,
-        'Изучи документацию проекта и проведи grilling: задавай мне вопросы по одному, пока не прояснишь требования, границы и критерии приёмки.',
-        'Затем оформи документацию: spec.md и задачи (issues/tasks) по правилам проекта.',
-        'Ничего не реализуй и не меняй код.',
-      ].join(' ')
-    }
-
     return {
-      // The panel needs the wire connection (session API) plus session and
-      // workspace navigation; declare them so the fiber waits for the services.
-      inject: ['slots', 'connection', 'sessions', 'workspaces'],
+      // The host half owns session creation; the client only needs slots plus
+      // session and workspace navigation.
+      inject: ['slots', 'sessions', 'workspaces'],
       apply(ctx) {
-        const connectionOf = () => ctx.connection
         const sessionsOf = () => ctx.sessions
         const workspacesOf = () => ctx.workspaces
-
-        /** Accept both RpcResponse ({result}) and RpcResult ({ok,value}). */
-        function normalizeResult(response) {
-          if (!response) return { ok: false, error: { message: 'пустой ответ' } }
-          return response.result ?? response
-        }
-
-        /**
-         * Call one host API endpoint. The running build exposes the wire client
-         * either as `connection.api` or as the generic `connection.rpc` caller;
-         * support both so the panel works on either composition.
-         */
-        async function callApi(endpoint, payload) {
-          const connection = connectionOf()
-          if (!connection) throw new Error('сервис connection недоступен')
-          const [section, method] = endpoint.split('.')
-          const api = connection.api
-          if (api?.[section]?.[method]) return normalizeResult(await api[section][method].call(api[section], payload))
-          const rpc = connection.rpc
-          if (typeof rpc?.call === 'function') return normalizeResult(await rpc.call('/api', endpoint, payload))
-          throw new Error(`нет метода ${endpoint}; ключи connection: ${Object.keys(connection).join(', ')}`)
-        }
 
         async function openSessionWhenListed(sessionId) {
           const sessions = sessionsOf()
@@ -901,41 +855,39 @@ window.__ModuleLoader__.load({
           }
         }
 
-        async function startChat(prompt, root) {
-          if (!root) throw new Error('неизвестен корень проекта')
-          const created = await callApi('session.create', { cwd: root })
-          if (!created.ok) {
-            throw new Error(`create: ${created.error?.message ?? JSON.stringify(created).slice(0, 240)}`)
-          }
-          const sessionId = created.value?.sessionId
-          if (!sessionId) throw new Error(`create без sessionId: ${JSON.stringify(created.value ?? {}).slice(0, 240)}`)
-          const sent = await callApi('session.prompt', { sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }] })
-          if (!sent.ok) {
-            throw new Error(`prompt: ${sent.error?.message ?? JSON.stringify(sent).slice(0, 240)}`)
-          }
-          await openSessionWhenListed(sessionId)
-          return sessionId
+        /**
+         * Ask the host half to create a session for a task or a new feature.
+         * The host owns the agent registry, so the client needs no wire API.
+         */
+        async function startChat(request) {
+          const response = await fetch(new URL('api/sdd/chat', document.baseURI), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ sessionId: currentSessionId, ...request }),
+          })
+          const payload = await response.json().catch(() => ({}))
+          if (!response.ok || !payload?.ok) throw new Error(payload?.error ?? `HTTP ${response.status}`)
+          if (payload.sessionId) await openSessionWhenListed(payload.sessionId)
+          return payload.sessionId
         }
 
-        async function runCommand(text, sessionId) {
-          if (!sessionId) throw new Error('нет активной сессии')
-          const sent = await callApi('session.prompt', {
-            sessionId,
-            mode: 'queue',
-            content: [{ type: 'text', text }],
+        /** Send one natural-language instruction to the current live session. */
+        async function sendPrompt(text) {
+          const response = await fetch(new URL('api/sdd/prompt', document.baseURI), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ sessionId: currentSessionId, text }),
           })
-          if (!sent.ok) throw new Error(`prompt: ${sent.error?.message ?? JSON.stringify(sent).slice(0, 200)}`)
-          if (sent.value?.command?.kind === 'error') throw new Error(sent.value.command.text ?? 'команда завершилась ошибкой')
+          const payload = await response.json().catch(() => ({}))
+          if (!response.ok || !payload?.ok) throw new Error(payload?.error ?? `HTTP ${response.status}`)
         }
 
         async function openPath(absolute) {
           const workspaces = workspacesOf()
-          if (workspaces?.openPath) {
-            await workspaces.openPath(absolute)
-            return
-          }
-          const result = await callApi('host.openPath', { path: absolute })
-          if (!result.ok) throw new Error(`openPath: ${result.error?.message ?? 'ошибка'}`)
+          if (!workspaces?.openPath) throw new Error('открытие путей недоступно')
+          await workspaces.openPath(absolute)
         }
 
         ctx.slots.inject('conversation.composer.dock', () =>
@@ -947,9 +899,9 @@ window.__ModuleLoader__.load({
               name: 'shell.overlay',
               id: 'sdd-compass.panel',
               inject: () => ({
-                startTaskChat: (task, root) => startChat(buildTaskPrompt(task), root),
-                startFeatureChat: (root, features) => startChat(buildFeaturePrompt(features), root),
-                runCommand,
+                startTask: (task) => startChat({ kind: 'task', task }),
+                startFeature: () => startChat({ kind: 'feature' }),
+                sendPrompt,
                 openPath,
               }),
             },

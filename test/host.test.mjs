@@ -736,6 +736,50 @@ test('state detects the grilling skill', async () => {
   assert.equal(openspec.project.features.grilling, false)
 })
 
+test('createChat validates tasks and drives the agent registry', async () => {
+  const temp = await tempFixture('scratch')
+  const calls = []
+  const agent = { followup: (message) => calls.push(message) }
+  const ctx = {
+    get(name) {
+      if (name !== 'agents') return undefined
+      return {
+        create: async (options) => {
+          calls.push(options)
+          return { agent }
+        },
+        get: () => agent,
+      }
+    },
+  }
+  const service = new SddService(ctx)
+  try {
+    service.rememberSession('s1', temp.root)
+    const state = await service.ensureState(temp.root)
+    const task = state.tasks.items[0]
+
+    const bad = await service.createChat('s1', { kind: 'task', task: { title: 'x', id: 'nope', path: 'nope' } })
+    assert.equal(bad.error, 'task-not-found')
+
+    const created = await service.createChat('s1', { kind: 'task', task })
+    assert.equal(created.ok, true)
+    assert.match(created.sessionId, /^session-/)
+    assert.equal(calls[0].meta.cwd, temp.root)
+    assert.ok(calls[1].content[0].text.includes(task.title))
+
+    const feature = await service.createChat('s1', { kind: 'feature' })
+    assert.equal(feature.ok, true)
+    assert.ok(calls[3].content[0].text.includes('grilling'))
+
+    const sent = await service.sendPrompt('s1', 'проверь проект')
+    assert.equal(sent.ok, true)
+    assert.equal(calls[4].content[0].text, 'проверь проект')
+  } finally {
+    service.dispose()
+    await temp.cleanup()
+  }
+})
+
 test('CI severity helpers', () => {
   assert.equal(worstSeverity([]), 'info')
   assert.equal(worstSeverity([{ severity: 'info' }, { severity: 'warn' }]), 'warn')

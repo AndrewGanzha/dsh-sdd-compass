@@ -7,6 +7,7 @@
  */
 
 import { promises as fsp, statSync, watch as fsWatch } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { configTemplate } from './config.js'
 import { buildDigest, digestText } from './digest.js'
@@ -21,6 +22,38 @@ const DEBOUNCE_MS = 400
 
 /** Tools that mutate files; only these participate in SDD nudges. */
 const WRITE_TOOLS = new Set(['write', 'edit', 'apply_patch', 'str_replace_editor', 'write_file', 'create_file', 'multi_edit'])
+
+/** One user-role message produced by the plugin for a chat prompt. */
+function chatMessage(text) {
+  return {
+    id: `sdd-${randomUUID()}`,
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'user' },
+  }
+}
+
+/** Prompt that starts work on a task. */
+function taskPrompt(task) {
+  return [
+    `Начни работу над задачей «${task.title}» (ID ${task.id}, файл ${task.path}).`,
+    'Сначала прочитай задачу и относящуюся к ней спеку, составь короткий план, затем выполняй.',
+    'Отмечай прогресс в SDD-компасе (/sdd next) и в самой задаче.',
+  ].join(' ')
+}
+
+/** Prompt that starts a new feature through grilling. */
+function featurePrompt(features) {
+  const skill = features?.grilling
+    ? 'Используй скилл grilling.'
+    : 'Используй скилл grilling; если его нет в проекте — возьми его из https://github.com/AndrewGanzha/basic-skills/tree/main/skills/grilling.'
+  return [
+    `${skill} Заведи новую задачу (фичу) в этом проекте.`,
+    'Изучи документацию проекта и проведи grilling: задавай мне вопросы по одному, пока не прояснишь требования, границы и критерии приёмки.',
+    'Затем оформи документацию: spec.md и задачи (issues/tasks) по правилам проекта.',
+    'Ничего не реализуй и не меняй код.',
+  ].join(' ')
+}
 
 /** Read and parse a small JSON request body. */
 function readJsonBody(req, limit = 64 * 1024) {
@@ -290,6 +323,19 @@ export class SddService {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const pathname = url.pathname.replace(/\/+$/, '')
+      if (pathname.endsWith('/chat') || pathname.endsWith('/prompt')) {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' })
+        let body = null
+        try {
+          body = await readJsonBody(req)
+        } catch (error) {
+          return json(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+        const result = pathname.endsWith('/chat')
+          ? await this.createChat(body?.sessionId ?? null, body ?? {})
+          : await this.sendPrompt(body?.sessionId ?? null, body?.text)
+        return json(res, result.ok ? 200 : 400, result)
+      }
       if (pathname.endsWith('/tasks/move')) {
         if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' })
         let body = null
@@ -431,6 +477,64 @@ export class SddService {
   async moveTask(exec, request) {
     const cwd = exec?.agent?.session?.header?.cwd
     return this.moveTaskForCwd(cwd, request)
+  }
+
+  /**
+   * Start a chat in the project for a task or a new feature (grilling).
+   * The session is created on the host through the agent registry, so the
+   * client does not need the wire API.
+   * @param {string|null} sessionId - current session.
+   * @param {{ kind?: 'task'|'feature', task?: { title?: string, id?: string, path?: string } }} request
+   */
+  async createChat(sessionId, request) {
+    const cwd = await this.cwdForSession(sessionId)
+    if (!cwd) return { ok: false, error: 'no-session' }
+    const state = await this.ensureState(cwd)
+    const root = state?.project?.root ?? cwd
+    const kind = request?.kind === 'feature' ? 'feature' : 'task'
+
+    let prompt
+    if (kind === 'feature') {
+      prompt = featurePrompt(state?.project?.features)
+    } else {
+      const task = request?.task ?? {}
+      if (!task.title) return { ok: false, error: 'task-title-required' }
+      const known = (state?.tasks?.items ?? []).some(
+        (item) => item.path === task.path && String(item.id) === String(task.id),
+      )
+      if (!known) return { ok: false, error: 'task-not-found' }
+      prompt = taskPrompt(task)
+    }
+
+    const agents = this.ctx?.get?.('agents')
+    if (!agents?.create) return { ok: false, error: 'agents-unavailable' }
+    const newSessionId = `session-${randomUUID()}`
+    try {
+      const handle = await agents.create({ sessionId: newSessionId, meta: { cwd: root } })
+      handle.agent.followup(chatMessage(prompt))
+      return { ok: true, sessionId: newSessionId }
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) }
+    }
+  }
+
+  /**
+   * Send a natural-language instruction to a live session.
+   * @param {string|null} sessionId
+   * @param {string} text
+   */
+  async sendPrompt(sessionId, text) {
+    if (!sessionId) return { ok: false, error: 'no-session' }
+    if (!text || typeof text !== 'string') return { ok: false, error: 'text-required' }
+    const agents = this.ctx?.get?.('agents')
+    const agent = agents?.get?.(sessionId)
+    if (!agent) return { ok: false, error: 'agent-not-live' }
+    try {
+      agent.followup(chatMessage(text))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) }
+    }
   }
 
   /** Move a task for the Web Client (session-scoped). */
