@@ -508,9 +508,16 @@ export class SddService {
 
     const agents = this.ctx?.get?.('agents')
     if (!agents?.create) return { ok: false, error: 'agents-unavailable' }
+    const source = agents.get?.(sessionId)
+    if (!source) return { ok: false, error: 'agent-not-live' }
+    const options = source.options ?? {}
+    if (!options.provider || !options.model) return { ok: false, error: 'model-selection-unavailable' }
+    const agentOptions = { provider: options.provider, model: options.model }
+    if (options.reasoningEffort) agentOptions.reasoningEffort = options.reasoningEffort
+
     const newSessionId = `session-${randomUUID()}`
     try {
-      const handle = await agents.create({ sessionId: newSessionId, meta: { cwd: root } })
+      const handle = await agents.create({ sessionId: newSessionId, meta: { cwd: root }, agentOptions })
       handle.agent.followup(chatMessage(prompt))
       return { ok: true, sessionId: newSessionId }
     } catch (error) {

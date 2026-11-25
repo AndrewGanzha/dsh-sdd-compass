@@ -739,7 +739,7 @@ test('state detects the grilling skill', async () => {
 test('createChat validates tasks and drives the agent registry', async () => {
   const temp = await tempFixture('scratch')
   const calls = []
-  const agent = { followup: (message) => calls.push(message) }
+  const agent = { followup: (message) => calls.push(message), options: { provider: 'test-provider', model: 'test-model' } }
   const ctx = {
     get(name) {
       if (name !== 'agents') return undefined
@@ -765,6 +765,7 @@ test('createChat validates tasks and drives the agent registry', async () => {
     assert.equal(created.ok, true)
     assert.match(created.sessionId, /^session-/)
     assert.equal(calls[0].meta.cwd, temp.root)
+    assert.deepEqual(calls[0].agentOptions, { provider: 'test-provider', model: 'test-model' })
     assert.ok(calls[1].content[0].text.includes(task.title))
 
     const feature = await service.createChat('s1', { kind: 'feature' })
