@@ -539,7 +539,7 @@ window.__ModuleLoader__.load({
       return base.length > 110 ? `${base.slice(0, 108).trimEnd()}…` : base
     }
 
-    function TaskCard({ task, writable, practice, moving }) {
+    function TaskCard({ task, writable, practice, moving, onStart }) {
       const actions = taskActions(task, writable, practice)
       return h(
         'div',
@@ -585,7 +585,7 @@ window.__ModuleLoader__.load({
                     type: 'button',
                     disabled: moving,
                     style: button({ padding: '2px 8px', fontSize: 10 }),
-                    onClick: () => void moveTask(task, status),
+                    onClick: () => (status === 'doing' ? void onStart(task) : void moveTask(task, status)),
                   },
                   label,
                 ),
@@ -595,7 +595,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function TasksTab({ data, moving, moveError }) {
+    function TasksTab({ data, moving, moveError, onStart }) {
       const tasks = data.tasks
       if (!tasks?.items?.length) {
         return h(
@@ -631,6 +631,7 @@ window.__ModuleLoader__.load({
                       writable: tasks.writable ?? [],
                       practice: tasks.practice,
                       moving,
+                      onStart,
                     }),
                   ),
             )
@@ -757,7 +758,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Panel shell
     // ------------------------------------------------------------------
-    function Panel() {
+    function Panel({ startTaskChat }) {
       const snapshot = useStore()
 
       React.useEffect(() => {
@@ -780,6 +781,16 @@ window.__ModuleLoader__.load({
       ]
       const reload = () => (snapshot.tab === 'projects' ? loadProjects() : load(currentSessionId, true))
       const busy = snapshot.refreshing || snapshot.projectsLoading
+
+      // «Начать» = mark the task as in progress and open a fresh chat on it.
+      const startWork = async (task) => {
+        await moveTask(task, 'doing')
+        try {
+          await startTaskChat(task, data?.project?.root)
+        } catch (error) {
+          setState({ moveError: `Задача взята, но чат не создан: ${String(error?.message ?? error)}` })
+        }
+      }
 
       const body = h(
         'div',
@@ -846,7 +857,7 @@ window.__ModuleLoader__.load({
           : snapshot.tab === 'status'
             ? h(StatusTab, { data })
             : snapshot.tab === 'tasks'
-              ? h(TasksTab, { data, moving: snapshot.moving, moveError: snapshot.moveError })
+              ? h(TasksTab, { data, moving: snapshot.moving, moveError: snapshot.moveError, onStart: startWork })
               : snapshot.tab === 'stats'
                 ? h(StatsTab, { data })
                 : snapshot.tab === 'projects'
@@ -905,14 +916,61 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Registration
     // ------------------------------------------------------------------
+    /** Prompt a fresh chat with the task. */
+    function buildTaskPrompt(task) {
+      return [
+        `Начни работу над задачей «${task.title}» (ID ${task.id}, файл ${task.path}).`,
+        'Сначала прочитай задачу и относящуюся к ней спеку, составь короткий план, затем выполняй.',
+        'Отмечай прогресс в SDD-компасе (/sdd next) и в самой задаче.',
+      ].join(' ')
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
+        /** Create a new session in the project and send the task as its first prompt. */
+        async function startTaskChat(task, root) {
+          if (!root) throw new Error('неизвестен корень проекта')
+          const connection = Reflect.get(ctx, 'connection')
+          const api = connection?.api
+          if (!api?.sessions?.create || !api?.sessions?.prompt) throw new Error('API сессий недоступен')
+
+          const created = await api.sessions.create({ cwd: root })
+          const createdResult = created?.result
+          if (!createdResult?.ok) throw new Error(createdResult?.error?.message ?? 'не удалось создать сессию')
+          const sessionId = createdResult.value?.sessionId
+          if (!sessionId) throw new Error('хост не вернул id сессии')
+
+          const sent = await api.sessions.prompt({
+            sessionId,
+            mode: 'queue',
+            content: [{ type: 'text', text: buildTaskPrompt(task) }],
+          })
+          if (!sent?.result?.ok) throw new Error(sent?.result?.error?.message ?? 'не удалось отправить задачу')
+
+          const sessions = Reflect.get(ctx, 'sessions')
+          const deadline = Date.now() + 5000
+          while (Date.now() < deadline) {
+            const snapshot = sessions?.list?.getSnapshot?.()
+            if (snapshot?.items?.some((item) => item.sessionId === sessionId)) break
+            await new Promise((resolve) => setTimeout(resolve, 100))
+          }
+          try {
+            sessions?.open?.(sessionId)
+          } catch {
+            // The session is created and prompted even if navigation lags.
+          }
+          return sessionId
+        }
+
         ctx.slots.inject('conversation.composer.dock', () =>
           ctx.slots.register({ name: 'conversation.composer.dock', id: 'sdd-compass', order: 6 }, SddDock),
         )
         ctx.slots.inject('shell.overlay', () =>
-          ctx.slots.register({ name: 'shell.overlay', id: 'sdd-compass.panel' }, Panel),
+          ctx.slots.register(
+            { name: 'shell.overlay', id: 'sdd-compass.panel', inject: () => ({ startTaskChat }) },
+            Panel,
+          ),
         )
       },
     }

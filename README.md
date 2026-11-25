@@ -156,6 +156,9 @@ The **Задачи** tab is a small kanban of the active change:
 - OpenSpec tasks are binary, so «Готово»/«Вернуть» toggle the checkbox, while
   «Начать» keeps the transient "in progress" state in `.sdd/board.json` and
   never touches `tasks.md`;
+- «Начать» also opens a fresh chat in the project and sends the task as its
+  first prompt (through the client session API; the button still moves the task
+  if that API is unavailable);
 - the same actions are exposed as `sdd_tasks` and `sdd_task_move`.
 
 The board is honest about its source of truth: it edits the artifacts the
