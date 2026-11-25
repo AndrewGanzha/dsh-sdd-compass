@@ -9,6 +9,7 @@
 
 import { promises as fsp } from 'node:fs'
 import path from 'node:path'
+import { readTextSafe } from './fsx.js'
 
 /** Kanban columns in display order. */
 export const COLUMNS = ['todo', 'doing', 'review', 'done']
@@ -64,9 +65,63 @@ export function kanbanOf(practice, rawStatus) {
 
 /** True when the column is writable for the practice. */
 export function isWritable(practice, column) {
-  if (practice === 'openspec') return column === 'todo' || column === 'done'
+  if (practice === 'openspec') return column === 'todo' || column === 'doing' || column === 'done'
   if (practice === 'scratch') return COLUMNS.includes(column)
   return false
+}
+
+/** Board overlay file: OpenSpec has no native "in progress", so the plugin
+ * keeps that one transient state in `.sdd/board.json`; the checkbox stays the
+ * source of truth for done. */
+function boardFile(root) {
+  return path.join(root, '.sdd', 'board.json')
+}
+
+/** Read the overlay; a missing or broken file means an empty board. */
+export async function readBoard(root) {
+  const text = await readTextSafe(boardFile(root), 64 * 1024)
+  if (!text) return { doing: [] }
+  try {
+    const data = JSON.parse(text)
+    const doing = Array.isArray(data?.doing)
+      ? data.doing.filter((entry) => entry && typeof entry.path === 'string')
+      : []
+    return { doing }
+  } catch {
+    return { doing: [] }
+  }
+}
+
+/** Persist the overlay atomically. */
+async function writeBoard(root, board) {
+  const file = boardFile(root)
+  await fsp.mkdir(path.dirname(file), { recursive: true })
+  const temporary = `${file}.tmp`
+  await fsp.writeFile(temporary, `${JSON.stringify({ doing: board.doing }, null, 2)}\n`, 'utf8')
+  await fsp.rename(temporary, file)
+}
+
+/** True when an overlay entry points at this task. */
+export function boardEntryMatches(entry, task) {
+  if (!entry || !task) return false
+  if (entry.path !== task.path) return false
+  if (Number.isFinite(entry.line) && Number.isFinite(task.line)) return entry.line === task.line
+  return Boolean(entry.title && entry.title === task.title)
+}
+
+/** Mark a task as started in the overlay. */
+export async function markDoing(root, task) {
+  const board = await readBoard(root)
+  board.doing = board.doing.filter((entry) => !boardEntryMatches(entry, task))
+  board.doing.push({ path: task.path, line: task.line ?? null, title: task.title, at: new Date().toISOString() })
+  await writeBoard(root, board)
+}
+
+/** Remove a task from the overlay. */
+export async function clearDoing(root, task) {
+  const board = await readBoard(root)
+  const next = board.doing.filter((entry) => !boardEntryMatches(entry, task))
+  if (next.length !== board.doing.length) await writeBoard(root, { doing: next })
 }
 
 /** Split text into lines while keeping the original separators. */
@@ -121,17 +176,27 @@ function safePath(root, relative) {
  */
 export async function setTaskColumn(input) {
   const { root, practice, task, column } = input
-  if (!isWritable(practice, column)) throw new Error(`Для ${practice} доступны только очередь и готово`)
+  if (!isWritable(practice, column)) throw new Error(`Для ${practice} доступны только очередь, работа и готово`)
   if (!task?.path) throw new Error('У задачи нет пути')
+
+  // OpenSpec has no native "in progress": keep it in the board overlay only.
+  if (practice === 'openspec' && column === 'doing') {
+    await markDoing(root, task)
+    return { ok: true, column, raw: 'doing' }
+  }
 
   const absolute = safePath(root, task.path)
   const text = await fsp.readFile(absolute, 'utf8')
   const next =
     practice === 'openspec' ? rewriteCheckbox(text, task.line, column) : rewriteScratchStatus(text, column)
-  if (next === text) return { ok: true, column, raw: task.status }
+  if (next === text) {
+    if (practice === 'openspec') await clearDoing(root, task)
+    return { ok: true, column, raw: task.status }
+  }
 
   const temporary = `${absolute}.sdd-tmp`
   await fsp.writeFile(temporary, next, 'utf8')
   await fsp.rename(temporary, absolute)
+  if (practice === 'openspec') await clearDoing(root, task)
   return { ok: true, column, raw: practice === 'openspec' ? column : SCRATCH_STATUS[column] }
 }

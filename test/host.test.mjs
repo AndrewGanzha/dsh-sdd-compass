@@ -635,7 +635,7 @@ test('setTaskColumn rewrites only the scratch status line', async () => {
   }
 })
 
-test('setTaskColumn toggles one OpenSpec checkbox and rejects doing', async () => {
+test('setTaskColumn toggles one OpenSpec checkbox and rejects outside paths', async () => {
   const temp = await tempFixture('openspec')
   const file = path.join(temp.root, 'openspec/changes/alpha/tasks.md')
   try {
@@ -658,18 +658,36 @@ test('setTaskColumn toggles one OpenSpec checkbox and rejects doing', async () =
     assert.match(await readFile(file, 'utf8'), /- \[ \] Add CSV writer/)
 
     await assert.rejects(
-      setTaskColumn({
-        root: temp.root,
-        practice: 'openspec',
-        column: 'doing',
-        task: { path: 'openspec/changes/alpha/tasks.md', line: 4, status: 'todo' },
-      }),
-      /очередь и готово/,
-    )
-    await assert.rejects(
       setTaskColumn({ root: temp.root, practice: 'scratch', column: 'doing', task: { path: '../outside.md', status: 'todo' } }),
       /вне проекта/,
     )
+  } finally {
+    await temp.cleanup()
+  }
+})
+
+test('OpenSpec "in progress" lives in the board overlay, not in tasks.md', async () => {
+  const temp = await tempFixture('openspec')
+  const file = path.join(temp.root, 'openspec/changes/alpha/tasks.md')
+  try {
+    const before = await readFile(file, 'utf8')
+    const task = { path: 'openspec/changes/alpha/tasks.md', line: 4, title: 'Add CSV writer', status: 'todo' }
+
+    const result = await setTaskColumn({ root: temp.root, practice: 'openspec', column: 'doing', task })
+    assert.equal(result.column, 'doing')
+    assert.equal(await readFile(file, 'utf8'), before, 'tasks.md must stay untouched')
+
+    const board = JSON.parse(await readFile(path.join(temp.root, '.sdd/board.json'), 'utf8'))
+    assert.equal(board.doing.length, 1)
+    assert.equal(board.doing[0].line, 4)
+
+    const state = await buildState({ root: temp.root, project: projectFor(temp.root), now: Date.now() })
+    assert.equal(state.tasks.counts.doing, 1)
+
+    await setTaskColumn({ root: temp.root, practice: 'openspec', column: 'done', task })
+    assert.match(await readFile(file, 'utf8'), /- \[x\] Add CSV writer/)
+    const cleared = JSON.parse(await readFile(path.join(temp.root, '.sdd/board.json'), 'utf8'))
+    assert.equal(cleared.doing.length, 0)
   } finally {
     await temp.cleanup()
   }
@@ -687,7 +705,7 @@ test('state builds kanban tasks for scratch and openspec', async () => {
   assert.equal(openspec.tasks.items.length, 3)
   assert.equal(openspec.tasks.counts.done, 1)
   assert.equal(openspec.tasks.counts.todo, 2)
-  assert.deepEqual(openspec.tasks.writable, ['todo', 'done'])
+  assert.deepEqual(openspec.tasks.writable, ['todo', 'doing', 'done'])
 })
 
 test('service moves a scratch task and reports the new column', async () => {

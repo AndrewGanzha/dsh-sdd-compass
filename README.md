@@ -153,7 +153,9 @@ The **Задачи** tab is a small kanban of the active change:
 - cards come from scratch tickets (`**Status:**`) and OpenSpec checkboxes;
 - buttons move a task by rewriting **only** its status marker — the
   `**Status:**` value or one `[ ]`/`[x]` — the rest of the file stays intact;
-- OpenSpec tasks are binary, so only `Очередь` and `Готово` are writable there;
+- OpenSpec tasks are binary, so «Готово»/«Вернуть» toggle the checkbox, while
+  «Начать» keeps the transient "in progress" state in `.sdd/board.json` and
+  never touches `tasks.md`;
 - the same actions are exposed as `sdd_tasks` and `sdd_task_move`.
 
 The board is honest about its source of truth: it edits the artifacts the

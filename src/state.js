@@ -15,7 +15,7 @@ import { pickDocs } from './docs.js'
 import { buildStats } from './stats.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId } from './trace.js'
 import { matchesImpact } from './impact.js'
-import { COLUMNS, kanbanOf } from './tasks.js'
+import { COLUMNS, kanbanOf, boardEntryMatches, readBoard } from './tasks.js'
 
 export const PHASES = ['idle', 'proposal', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive']
 
@@ -216,7 +216,7 @@ function buildLinks(project, change, trace) {
 }
 
 /** Build the kanban task list for the active change. */
-export function buildTasks(change, practice) {
+export function buildTasks(change, practice, board = { doing: [] }) {
   const items = []
   if (change && practice === 'scratch') {
     for (const issue of change.issues ?? []) {
@@ -243,8 +243,12 @@ export function buildTasks(change, practice) {
 
   const counts = { todo: 0, doing: 0, review: 0, done: 0 }
   for (const item of items) {
-    item.kanban = kanbanOf(practice, item.status)
-    counts[item.kanban] = (counts[item.kanban] ?? 0) + 1
+    let kanban = kanbanOf(practice, item.status)
+    if (practice === 'openspec' && kanban === 'todo' && board.doing.some((entry) => boardEntryMatches(entry, item))) {
+      kanban = 'doing'
+    }
+    item.kanban = kanban
+    counts[kanban] = (counts[kanban] ?? 0) + 1
   }
 
   return {
@@ -252,7 +256,7 @@ export function buildTasks(change, practice) {
     practice,
     items,
     counts,
-    writable: practice === 'openspec' ? ['todo', 'done'] : practice === 'scratch' ? [...COLUMNS] : [],
+    writable: practice === 'openspec' ? ['todo', 'doing', 'done'] : practice === 'scratch' ? [...COLUMNS] : [],
   }
 }
 
@@ -284,6 +288,7 @@ export async function buildState(input) {
   const trace = supported ? await collectAnnotations(root, config.trace ?? {}, input.cache) : null
   const traceSummary = summarizeTrace(trace, active?.requirementIds ?? [], active, project)
   const links = buildLinks(project, active, trace)
+  const board = supported ? await readBoard(root) : { doing: [] }
 
   const findings = runChecks({
     project,
@@ -346,7 +351,7 @@ export async function buildState(input) {
     stats,
     trace: traceSummary,
     links,
-    tasks: buildTasks(active, detection.practice),
+    tasks: buildTasks(active, detection.practice, board),
     note: note ?? null,
     configError: loaded.error ?? null,
     configPath: loaded.configPath ?? null,

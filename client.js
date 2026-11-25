@@ -515,10 +515,16 @@ window.__ModuleLoader__.load({
     function taskActions(task, writable, practice) {
       const actions = []
       if (practice === 'openspec') {
-        actions.push(task.kanban === 'done' ? ['todo', 'Вернуть'] : ['done', 'Готово'])
+        if (task.kanban === 'done') {
+          actions.push(['todo', 'Вернуть'])
+        } else {
+          if (task.kanban === 'todo') actions.push(['doing', 'Начать'])
+          actions.push(['done', 'Готово'])
+          if (task.kanban === 'doing') actions.push(['todo', 'Вернуть'])
+        }
         return actions
       }
-      if (task.kanban !== 'doing' && writable.includes('doing')) actions.push(['doing', 'Взять'])
+      if (task.kanban !== 'doing' && writable.includes('doing')) actions.push(['doing', 'Начать'])
       if (task.kanban !== 'review' && task.kanban !== 'done' && writable.includes('review')) actions.push(['review', 'Проверка'])
       if (task.kanban !== 'done' && writable.includes('done')) actions.push(['done', 'Готово'])
       if (task.kanban !== 'todo') actions.push(['todo', 'Вернуть'])
