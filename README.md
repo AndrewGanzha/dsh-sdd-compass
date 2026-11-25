@@ -7,6 +7,8 @@ shows where a project stands in its spec-driven development (SDD) flow — phase
 active change, tasks, drift warnings and the documents worth reading — right in
 the composer dock, in the system prompt and through `/sdd`.
 
+**Landing page:** https://andrewganzha.github.io/dsh-sdd-compass/
+
 It does not replace OpenSpec or a spec workflow: it observes the artifacts those
 tools already produce and turns them into a compass.
 

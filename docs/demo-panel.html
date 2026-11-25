@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SDD Compass panel preview</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: radial-gradient(1200px 600px at 30% 0%, #1a2230 0%, #0b0f14 60%);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #e6edf3;
+  }
+  .panel {
+    width: 900px;
+    background: #12161c;
+    border: 1px solid rgba(127,127,127,0.35);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  }
+  .header { display: flex; align-items: center; gap: 8px; }
+  .title { font-size: 13px; font-weight: 600; }
+  .version { font-size: 9px; opacity: 0.35; font-family: ui-monospace, Consolas, monospace; }
+  .spacer { flex: 1; }
+  .btn {
+    padding: 6px 12px; border-radius: 8px; font-size: 12px;
+    border: 1px solid rgba(127,127,127,0.35); background: transparent; color: inherit;
+  }
+  .btn.primary { border-color: rgba(91,141,239,0.7); background: rgba(91,141,239,0.16); font-weight: 600; }
+  .close { border: none; background: transparent; color: inherit; font-size: 16px; opacity: 0.6; padding: 0 4px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid rgba(127,127,127,0.22); padding-bottom: 6px; margin-top: 8px; }
+  .tab { border: none; background: transparent; color: inherit; font-size: 12px; padding: 5px 11px; border-radius: 999px; }
+  .tab.active { background: rgba(91,141,239,0.18); font-weight: 600; }
+  .line { font-size: 12px; line-height: 18px; margin-top: 10px; }
+  .muted { opacity: 0.5; }
+  .mono { font-family: ui-monospace, Consolas, monospace; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px;
+    border-radius: 999px; font-size: 10px; line-height: 16px; background: rgba(127,127,127,0.14);
+  }
+  .chip.warn { color: #f59e0b; }
+  .section-title {
+    display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.55;
+  }
+  .finding {
+    display: flex; gap: 8px; align-items: flex-start; padding: 4px 0;
+    font-size: 12px; line-height: 17px;
+  }
+  .finding .icon { flex: 0 0 auto; }
+  .finding.warn { color: #f59e0b; }
+  .finding.info { color: inherit; }
+  .finding .btn { margin-left: auto; padding: 2px 8px; font-size: 10px; }
+  .rule { font-size: 11px; opacity: 0.45; margin-top: 12px; }
+  .footer {
+    display: flex; align-items: center; gap: 8px; margin-top: 14px; padding-top: 8px;
+    border-top: 1px solid rgba(127,127,127,0.18);
+  }
+  .footer .path { margin-left: auto; font-size: 9px; opacity: 0.4; font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div class="title">SDD-компас</div>
+      <div class="version">v0.10.8</div>
+      <div class="spacer"></div>
+      <button class="btn primary">+ Задача</button>
+      <button class="close">×</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active">Сейчас</button>
+      <button class="tab">Задачи</button>
+      <button class="tab">Ещё</button>
+    </div>
+    <div class="line">
+      <strong>nomenclature-msnn</strong><span class="muted"> · </span>проверка<span class="muted"> · шаг 7 из 8</span><span class="muted mono"> · created-objects-show-purpose</span>
+    </div>
+    <div class="actions">
+      <button class="btn primary">Заархивировать</button>
+      <button class="btn">Начать задачу</button>
+      <button class="btn">Дальше</button>
+      <button class="btn">Проверить</button>
+      <button class="btn">Задачи</button>
+    </div>
+    <div class="chips">
+      <span class="chip">задачи 6/25</span>
+      <span class="chip">вопросы 2</span>
+      <span class="chip warn">⚠ 2</span>
+    </div>
+    <div class="section-title">Замечания <span class="chip">2</span></div>
+    <div class="finding warn">
+      <span class="icon">⚠</span>
+      <span>Задачи выполнены, но изменение не заархивировано 12 дн.</span>
+      <button class="btn">Команда</button>
+    </div>
+    <div class="finding info">
+      <span class="icon">ℹ</span>
+      <span>За 7 дней изменено 3 файл(ов) кода вне SDD-артефактов при фазе проверки.</span>
+      <button class="btn">Открыть</button>
+    </div>
+    <div class="rule">Проверь результат и заархивируй изменение; отметь проверку.</div>
+    <div class="footer">
+      <button class="btn">Обновить</button>
+      <span class="path">C:\my\projects\nomenclature-platform\nomenclature-msnn</span>
+    </div>
+  </div>
+</body>
+</html>

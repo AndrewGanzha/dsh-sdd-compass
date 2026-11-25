@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SDD Compass dock preview</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(1000px 500px at 50% 20%, #1a2230 0%, #0b0f14 65%);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #e6edf3;
+  }
+  .composer {
+    width: 760px;
+    background: #12161c;
+    border: 1px solid rgba(127,127,127,0.3);
+    border-radius: 14px;
+    padding: 14px 16px 10px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+  }
+  .placeholder { font-size: 13px; opacity: 0.4; padding: 8px 2px 28px; }
+  .dock {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 11px; line-height: 16px; padding: 2px 0 4px;
+  }
+  .brand { opacity: 0.55; font-weight: 600; letter-spacing: 0.4px; }
+  .dot { color: #f59e0b; }
+  .muted { opacity: 0.65; }
+  .warn { color: #f59e0b; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; opacity: 0.4; font-size: 11px; }
+  .pill { border: 1px solid rgba(127,127,127,0.3); border-radius: 6px; padding: 2px 8px; }
+</style>
+</head>
+<body>
+  <div class="composer">
+    <div class="placeholder">Спросите что-нибудь или начните задачу…</div>
+    <div class="dock">
+      <span class="brand">SDD</span>
+      <span class="dot">●</span>
+      <span>проверка</span>
+      <span class="muted">6/25</span>
+      <span class="warn">⚠ 2</span>
+    </div>
+    <div class="row">
+      <span class="pill">Модель</span>
+      <span class="pill">Разрешения</span>
+      <span style="flex:1"></span>
+      <span class="pill">Отправить</span>
+    </div>
+  </div>
+</body>
+</html>

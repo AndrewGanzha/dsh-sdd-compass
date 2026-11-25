@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDD-компас — плагин DeepSeek Harness</title>
+<meta name="description" content="Плагин DeepSeek Harness: где проект в SDD-процессе, что делать дальше, канбан задач и дрейф — в панели композера.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='26' fill='none' stroke='%235b8def' stroke-width='6'/%3E%3Cpath d='M32 12 L38 32 L32 52 L26 32 Z' fill='%235b8def'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --bg-soft: #12161c;
+    --bg-card: #151a21;
+    --line: rgba(148, 163, 184, 0.18);
+    --text: #e6edf3;
+    --muted: #9aa7b4;
+    --accent: #5b8def;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 700px at 20% -10%, #182235 0%, var(--bg) 55%);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header.top {
+    display: flex; align-items: center; gap: 12px; padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .logo { width: 34px; height: 34px; flex: 0 0 auto; }
+  .name { font-weight: 700; font-size: 17px; letter-spacing: 0.2px; }
+  .spacer { flex: 1; }
+  .ghost-btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border: 1px solid var(--line); border-radius: 10px; color: var(--text); font-size: 14px;
+  }
+  .ghost-btn:hover { border-color: var(--accent); text-decoration: none; }
+  .hero { padding: 56px 0 24px; }
+  .hero h1 { font-size: clamp(30px, 4.6vw, 46px); line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.5px; }
+  .hero p.lead { color: var(--muted); font-size: 18px; max-width: 720px; margin: 0 0 22px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted);
+  }
+  .badge b { color: var(--text); font-weight: 600; }
+  .shot {
+    display: block; width: 100%; height: auto; border-radius: 14px;
+    border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+  .caption { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
+  section { padding: 44px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 24px; margin: 0 0 18px; letter-spacing: -0.3px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), var(--bg-card);
+    border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .steps { counter-reset: step; list-style: none; margin: 0; padding: 0; }
+  .steps li { position: relative; padding: 0 0 22px 46px; }
+  .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: -2px; width: 30px; height: 30px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: rgba(91,141,239,0.16); color: var(--accent); font-weight: 700; font-size: 14px;
+    border: 1px solid rgba(91,141,239,0.45);
+  }
+  .steps h3 { margin: 0 0 6px; font-size: 15px; }
+  pre {
+    background: #0d1117; border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow: auto; font-size: 13px; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  .inline { background: rgba(127,127,127,0.16); padding: 1px 6px; border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td code { white-space: nowrap; }
+  .note {
+    border-left: 3px solid var(--warn); background: rgba(245,158,11,0.08);
+    padding: 12px 16px; border-radius: 8px; color: #f4d9a6; font-size: 14px;
+  }
+  footer { padding: 30px 0 50px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f8fb; --bg-soft: #ffffff; --bg-card: #ffffff; --text: #111827;
+      --muted: #5b6675; --line: rgba(17, 24, 39, 0.12);
+    }
+    body { background: radial-gradient(1000px 600px at 20% -10%, #e8f0ff 0%, var(--bg) 60%); }
+    pre { background: #0f172a; color: #e6edf3; }
+    .note { color: #7c4a03; }
+  }
+</style>
+</head>
+<body>
+<header class="top wrap">
+  <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+    <circle cx="32" cy="32" r="26" fill="none" stroke="#5b8def" stroke-width="6"/>
+    <path d="M32 12 L38 32 L32 52 L26 32 Z" fill="#5b8def"/>
+  </svg>
+  <div class="name">SDD-компас</div>
+  <div class="spacer"></div>
+  <a class="ghost-btn" href="https://github.com/AndrewGanzha/dsh-sdd-compass">GitHub →</a>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>Держит проект в SDD-процессе</h1>
+    <p class="lead">
+      Плагин для DeepSeek Harness: показывает фазу активного изменения, следующий шаг,
+      замечания и документы, которые стоит прочитать, — прямо в панели композера.
+      А ещё даёт канбан задач и кнопку, которая заводит новую фичу через grilling.
+    </p>
+    <div class="badges">
+      <a class="badge" href="https://github.com/AndrewGanzha/dsh-sdd-compass/actions/workflows/ci.yml">
+        <img src="https://github.com/AndrewGanzha/dsh-sdd-compass/actions/workflows/ci.yml/badge.svg" alt="CI" height="16">
+      </a>
+      <span class="badge"><b>MIT</b> лицензия</span>
+      <span class="badge"><b>v0.10.8</b></span>
+      <span class="badge">OpenSpec · Scratch · SSC</span>
+    </div>
+    <img class="shot" src="screenshots/panel.png" alt="Панель SDD-компаса: действия, замечания и документы">
+    <div class="caption">Вкладка «Сейчас»: действия и три главных замечания. Справка убрана в «Ещё».</div>
+  </div>
+
+  <section>
+    <h2>Что делает</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Фаза и следующий шаг</h3>
+        <p>Читает артефакты OpenSpec, Scratch и SSC, вычисляет фазу и подсказывает, что делать дальше.</p>
+      </div>
+      <div class="card">
+        <h3>Канбан задач</h3>
+        <p>Очередь, в работе, проверка, готово. «Начать» переводит задачу в работу и открывает новый чат с ней.</p>
+      </div>
+      <div class="card">
+        <h3>Замечания и дрейф</h3>
+        <p>Код без спеки, устаревшее изменение, незаархивированное, просроченные ревью, дрейф за 7 дней.</p>
+      </div>
+      <div class="card">
+        <h3>Статистика и отчёт</h3>
+        <p>Цикл «спека → архив», доля дошедших до архива, дрейф, покрытие <code>@sdd</code>-аннотациями, недельный дайджест.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Строка под композером</h2>
+    <img class="shot" src="screenshots/dock.png" alt="Строка SDD под полем ввода">
+    <div class="caption">Компактный статус: фаза, задачи и число предупреждений. Клик открывает панель.</div>
+  </section>
+
+  <section>
+    <h2>Установка</h2>
+    <ol class="steps">
+      <li>
+        <h3>Склонируйте репозиторий</h3>
+        <pre><code>git clone https://github.com/AndrewGanzha/dsh-sdd-compass.git</code></pre>
+      </li>
+      <li>
+        <h3>Подключите пакет к профилю</h3>
+        <p>В <code>~/.dsh/profiles/desktop/package.json</code> добавьте бандл и зависимость:</p>
+        <pre><code>{
+  "dsh": { "profile": { "bundles": ["...", "dsh-sdd-compass"] } },
+  "dependencies": { "dsh-sdd-compass": "link:C:/path/to/dsh-sdd-compass" }
+}</code></pre>
+        <p>Или откройте <b>Plugins → Add plugin</b> в DSH и выберите папку плагина.</p>
+      </li>
+      <li>
+        <h3>Перезагрузите окно</h3>
+        <p>Host-часть применяется сразу, панель и строка появятся после <code>Ctrl+R</code>.</p>
+      </li>
+    </ol>
+    <div class="note">Нужен DeepSeek Harness с Web UI. Git не обязателен: без него статистика честно покажет «мало данных».</div>
+  </section>
+
+  <section>
+    <h2>Настройка</h2>
+    <p>Необязательный файл <code>.sdd/config.json</code> в проекте создаётся командой <code>/sdd init</code>:</p>
+    <pre><code>{
+  "practice": "auto",          // auto | openspec | scratch | ssc
+  "change": "auto",            // auto = самый свежий незавершённый
+  "strictness": "warn",        // quiet | info | warn | gate
+  "staleAfterDays": 14,
+  "docs": { "roots": ["docs", "openspec/specs"], "maxItems": 5 },
+  "checks": { "drift": true, "archive": true, "stale": true, "statuses": true, "trace": true },
+  "trace": { "roots": ["src", "app", "lib", "tests"], "maxFiles": 800 }
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>Команды и инструменты</h2>
+    <table>
+      <thead><tr><th>Что</th><th>Как</th></tr></thead>
+      <tbody>
+        <tr><td>Состояние</td><td><code>/sdd</code> · <code>/sdd next</code> · <code>/sdd check</code></td></tr>
+        <tr><td>Следующий шаг и архив</td><td><code>/sdd advance</code> · <code>/sdd archive</code> (печатают команду, не выполняют)</td></tr>
+        <tr><td>Документы и статистика</td><td><code>/sdd docs</code> · <code>/sdd stats</code> · <code>/sdd report</code> · <code>/sdd digest</code></td></tr>
+        <tr><td>Проекты</td><td><code>/sdd projects</code></td></tr>
+        <tr><td>Инициализация</td><td><code>/sdd init</code> · <code>/sdd refresh</code></td></tr>
+        <tr><td>Для модели</td><td><code>sdd_status</code>, <code>sdd_check</code>, <code>sdd_projects</code>, <code>sdd_digest</code>, <code>sdd_tasks</code>, <code>sdd_task_move</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>CI и отчёты</h2>
+    <pre><code>node scripts/check.js . --ci                  # exit 1 при warn/error
+node scripts/check.js . --ci --fail-on error  # только при ошибках
+node scripts/check.js . --report              # markdown-сводка
+node scripts/check.js . --digest 7            # недельный дайджест</code></pre>
+    <p>Дайджест можно доставлять по расписанию: создайте задачу в DSH с промптом «вызови <code>sdd_digest</code> и пришли результат».</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>SDD-компас · MIT</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/AndrewGanzha/dsh-sdd-compass">Репозиторий</a>
+    <a href="https://github.com/AndrewGanzha/dsh-sdd-compass/blob/main/README.md">README</a>
+    <a href="https://github.com/AndrewGanzha/dsh-sdd-compass/blob/main/docs/DETAIL.md">DETAIL</a>
+  </div>
+</footer>
+</body>
+</html>
