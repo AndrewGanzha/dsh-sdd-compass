@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: '@andrewganzha'
+
+      - name: Package the plugin tarball
+        run: npm pack
+
+      - name: Scope the package for GitHub Packages
+        run: npm pkg set name=@andrewganzha/dsh-sdd-compass
+
+      - name: Publish to GitHub Packages
+        run: npm publish --registry=https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Archive the source tree
+        run: git archive --format=zip --prefix=dsh-sdd-compass/ -o dsh-sdd-compass.zip HEAD
+
+      - name: Create GitHub release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tgz
+            dsh-sdd-compass.zip
+          generate_release_notes: true

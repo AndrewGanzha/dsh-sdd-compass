@@ -32,6 +32,29 @@ A phase is a pure function of the artifacts on disk; nothing is invented.
 
 ## Install
 
+### From a release (easiest)
+
+1. Open [Releases](https://github.com/AndrewGanzha/dsh-sdd-compass/releases) and
+   download `dsh-sdd-compass.zip` (or the `.tgz` package).
+2. Unpack it anywhere and add the folder with **Plugins → Add plugin**, or link
+   it in the profile as shown below.
+3. Reload the window (`Ctrl+R`).
+
+### From GitHub Packages
+
+```bash
+# .npmrc in the profile or project
+@andrewganzha:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=<token with read:packages>
+
+npm install @andrewganzha/dsh-sdd-compass
+```
+
+The package is published by the `release` workflow on every `v*` tag. The same
+repository can be linked from source (below) when you want to edit the plugin.
+
+### From source
+
 1. Clone the repository next to your other plugins:
 
    ```bash

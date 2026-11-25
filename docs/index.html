@@ -126,8 +126,9 @@
         <img src="https://github.com/AndrewGanzha/dsh-sdd-compass/actions/workflows/ci.yml/badge.svg" alt="CI" height="16">
       </a>
       <span class="badge"><b>MIT</b> лицензия</span>
-      <span class="badge"><b>v0.10.8</b></span>
+      <span class="badge"><b>v0.11.0</b></span>
       <span class="badge">OpenSpec · Scratch · SSC</span>
+      <a class="badge" href="https://github.com/AndrewGanzha/dsh-sdd-compass/releases"><b>Скачать release</b> →</a>
     </div>
     <img class="shot" src="screenshots/panel.png" alt="Панель SDD-компаса: действия, замечания и документы">
     <div class="caption">Вкладка «Сейчас»: действия и три главных замечания. Справка убрана в «Ещё».</div>
@@ -165,7 +166,10 @@
     <h2>Установка</h2>
     <ol class="steps">
       <li>
-        <h3>Склонируйте репозиторий</h3>
+        <h3>Скачайте и подключите</h3>
+        <p>Проще всего — <a href="https://github.com/AndrewGanzha/dsh-sdd-compass/releases">release</a>:
+          скачайте <code>dsh-sdd-compass.zip</code>, распакуйте и укажите папку в <b>Plugins → Add plugin</b>.</p>
+        <p>Или клонируйте из исходников:</p>
         <pre><code>git clone https://github.com/AndrewGanzha/dsh-sdd-compass.git</code></pre>
       </li>
       <li>
@@ -183,6 +187,14 @@
       </li>
     </ol>
     <div class="note">Нужен DeepSeek Harness с Web UI. Git не обязателен: без него статистика честно покажет «мало данных».</div>
+
+    <h3 style="margin-top:26px">Или из GitHub Packages</h3>
+    <pre><code># .npmrc
+@andrewganzha:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=&lt;token с read:packages&gt;
+
+npm install @andrewganzha/dsh-sdd-compass</code></pre>
+    <p>Пакет публикуется автоматически по тегу <code>v*</code>; release-workflow прикладывает zip и tgz.</p>
   </section>
 
   <section>
