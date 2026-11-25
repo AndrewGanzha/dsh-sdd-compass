@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const ROUTE = 'api/sdd'
-    const VERSION = '0.10.3'
+    const VERSION = '0.10.4'
     const POLL_MS = 20_000
     const C = {
       ok: '#22c55e',
@@ -864,6 +864,28 @@ window.__ModuleLoader__.load({
         const sessionsOf = () => ctx.sessions
         const workspacesOf = () => ctx.workspaces
 
+        /** Accept both RpcResponse ({result}) and RpcResult ({ok,value}). */
+        function normalizeResult(response) {
+          if (!response) return { ok: false, error: { message: 'пустой ответ' } }
+          return response.result ?? response
+        }
+
+        /**
+         * Call one host API endpoint. The running build exposes the wire client
+         * either as `connection.api` or as the generic `connection.rpc` caller;
+         * support both so the panel works on either composition.
+         */
+        async function callApi(endpoint, payload) {
+          const connection = connectionOf()
+          if (!connection) throw new Error('сервис connection недоступен')
+          const [section, method] = endpoint.split('.')
+          const api = connection.api
+          if (api?.[section]?.[method]) return normalizeResult(await api[section][method].call(api[section], payload))
+          const rpc = connection.rpc
+          if (typeof rpc?.call === 'function') return normalizeResult(await rpc.call('/api', endpoint, payload))
+          throw new Error(`нет метода ${endpoint}; ключи connection: ${Object.keys(connection).join(', ')}`)
+        }
+
         async function openSessionWhenListed(sessionId) {
           const sessions = sessionsOf()
           const deadline = Date.now() + 5000
@@ -881,24 +903,15 @@ window.__ModuleLoader__.load({
 
         async function startChat(prompt, root) {
           if (!root) throw new Error('неизвестен корень проекта')
-          const connection = connectionOf()
-          if (!connection) throw new Error('сервис connection недоступен')
-          const api = connection.api
-          if (!api) throw new Error(`connection без api (ключи: ${Object.keys(connection).join(', ')})`)
-          if (!api.sessions) throw new Error(`api без sessions (ключи: ${Object.keys(api).slice(0, 12).join(', ')})`)
-          if (typeof api.sessions.create !== 'function' || typeof api.sessions.prompt !== 'function') {
-            throw new Error(`sessions без create/prompt (ключи: ${Object.keys(api.sessions).join(', ')})`)
+          const created = await callApi('session.create', { cwd: root })
+          if (!created.ok) {
+            throw new Error(`create: ${created.error?.message ?? JSON.stringify(created).slice(0, 240)}`)
           }
-          const created = await api.sessions.create({ cwd: root })
-          const createdResult = created?.result
-          if (!createdResult?.ok) {
-            throw new Error(`create: ${createdResult?.error?.message ?? JSON.stringify(created ?? {}).slice(0, 240)}`)
-          }
-          const sessionId = createdResult.value?.sessionId
-          if (!sessionId) throw new Error(`create без sessionId: ${JSON.stringify(createdResult.value ?? {}).slice(0, 240)}`)
-          const sent = await api.sessions.prompt({ sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }] })
-          if (!sent?.result?.ok) {
-            throw new Error(`prompt: ${sent?.result?.error?.message ?? JSON.stringify(sent ?? {}).slice(0, 240)}`)
+          const sessionId = created.value?.sessionId
+          if (!sessionId) throw new Error(`create без sessionId: ${JSON.stringify(created.value ?? {}).slice(0, 240)}`)
+          const sent = await callApi('session.prompt', { sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }] })
+          if (!sent.ok) {
+            throw new Error(`prompt: ${sent.error?.message ?? JSON.stringify(sent).slice(0, 240)}`)
           }
           await openSessionWhenListed(sessionId)
           return sessionId
@@ -906,23 +919,23 @@ window.__ModuleLoader__.load({
 
         async function runCommand(text, sessionId) {
           if (!sessionId) throw new Error('нет активной сессии')
-          const connection = connectionOf()
-          const api = connection?.api
-          if (!api?.sessions?.prompt) throw new Error('метод sessions.prompt недоступен')
-          const sent = await api.sessions.prompt({
+          const sent = await callApi('session.prompt', {
             sessionId,
             mode: 'queue',
             content: [{ type: 'text', text }],
           })
-          const result = sent?.result
-          if (!result?.ok) throw new Error(result?.error?.message ?? 'команда не принята')
-          if (result.value?.command?.kind === 'error') throw new Error(result.value.command.text ?? 'команда завершилась ошибкой')
+          if (!sent.ok) throw new Error(`prompt: ${sent.error?.message ?? JSON.stringify(sent).slice(0, 200)}`)
+          if (sent.value?.command?.kind === 'error') throw new Error(sent.value.command.text ?? 'команда завершилась ошибкой')
         }
 
         async function openPath(absolute) {
           const workspaces = workspacesOf()
-          if (!workspaces?.openPath) throw new Error('метод workspaces.openPath недоступен')
-          await workspaces.openPath(absolute)
+          if (workspaces?.openPath) {
+            await workspaces.openPath(absolute)
+            return
+          }
+          const result = await callApi('host.openPath', { path: absolute })
+          if (!result.ok) throw new Error(`openPath: ${result.error?.message ?? 'ошибка'}`)
         }
 
         ctx.slots.inject('conversation.composer.dock', () =>
