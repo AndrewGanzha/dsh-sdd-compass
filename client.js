@@ -856,9 +856,12 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
-        const connectionOf = () => Reflect.get(ctx, 'connection')
-        const sessionsOf = () => Reflect.get(ctx, 'sessions')
-        const workspacesOf = () => Reflect.get(ctx, 'workspaces')
+        // Services are read through ctx.get(): reading a property directly
+        // requires the service in the plugin's `inject` list, and the panel
+        // must stay usable on hosts that lack one of these services.
+        const connectionOf = () => ctx.get?.('connection')
+        const sessionsOf = () => ctx.get?.('sessions')
+        const workspacesOf = () => ctx.get?.('workspaces')
 
         async function openSessionWhenListed(sessionId) {
           const sessions = sessionsOf()
