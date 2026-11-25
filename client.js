@@ -854,14 +854,13 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots'],
+      // The panel needs the wire connection (session API) plus session and
+      // workspace navigation; declare them so the fiber waits for the services.
+      inject: ['slots', 'connection', 'sessions', 'workspaces'],
       apply(ctx) {
-        // Services are read through ctx.get(): reading a property directly
-        // requires the service in the plugin's `inject` list, and the panel
-        // must stay usable on hosts that lack one of these services.
-        const connectionOf = () => ctx.get?.('connection')
-        const sessionsOf = () => ctx.get?.('sessions')
-        const workspacesOf = () => ctx.get?.('workspaces')
+        const connectionOf = () => ctx.connection
+        const sessionsOf = () => ctx.sessions
+        const workspacesOf = () => ctx.workspaces
 
         async function openSessionWhenListed(sessionId) {
           const sessions = sessionsOf()
