@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const ROUTE = 'api/sdd'
-    const VERSION = '0.10.7'
+    const VERSION = '0.10.8'
     const POLL_MS = 20_000
     const C = {
       ok: '#22c55e',
@@ -698,8 +698,13 @@ window.__ModuleLoader__.load({
         guard('Старт задачи', async () => {
           await moveTask(task, 'doing')
           await startTask(task)
+          setState({ open: false })
         })
-      const onFeature = () => guard('Новая задача', () => startFeature())
+      const onFeature = () =>
+        guard('Новая задача', async () => {
+          await startFeature()
+          setState({ open: false })
+        })
 
       const tabs = [
         ['now', 'Сейчас'],

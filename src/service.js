@@ -523,11 +523,33 @@ export class SddService {
 
     const newSessionId = `session-${randomUUID()}`
     try {
-      const handle = await agents.create({ sessionId: newSessionId, meta: { cwd: root }, agentOptions })
+      const handle = await agents.create({
+        sessionId: newSessionId,
+        meta: { cwd },
+        agentOptions,
+      })
+      await this.attachToWorkspace(newSessionId, cwd, root)
       handle.agent.followup(chatMessage(prompt))
       return { ok: true, sessionId: newSessionId }
     } catch (error) {
       return { ok: false, error: String(error?.message ?? error) }
+    }
+  }
+
+  /** Attach a host-created session to the workspace that owns its directory. */
+  async attachToWorkspace(sessionId, cwd, root) {
+    const registry = this.ctx?.get?.('workspaceRegistry')
+    if (!registry?.resolveByPath) return
+    for (const candidate of [cwd, root]) {
+      try {
+        const workspace = await registry.resolveByPath(candidate)
+        if (workspace?.attachSession) {
+          await workspace.attachSession(sessionId)
+          return
+        }
+      } catch {
+        // The directory is not an owned workspace; leave the session as is.
+      }
     }
   }
 
