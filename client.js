@@ -4,14 +4,8 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
-    // Optional host component library; the panel falls back to a plain overlay.
-    let primitives = null
-    try {
-      primitives = require('@deepseek-ai/dsh-client-ui-primitives')
-    } catch {
-      primitives = null
-    }
-
+    // Optional host component library is not used: the panel needs a wider
+    // canvas than the stock modal provides.
     const ROUTE = 'api/sdd'
     const POLL_MS = 20_000
     const C = {
@@ -531,11 +525,20 @@ window.__ModuleLoader__.load({
       return actions
     }
 
+    /** Short card title: first sentence, without the verification tail. */
+    function shortTaskTitle(text) {
+      const clean = String(text ?? '').replace(/\s+/g, ' ').trim()
+      const head = clean.split(/(?:Проверка:|\.\s)/)[0]
+      const base = head.length >= 20 ? head : clean
+      return base.length > 110 ? `${base.slice(0, 108).trimEnd()}…` : base
+    }
+
     function TaskCard({ task, writable, practice, moving }) {
       const actions = taskActions(task, writable, practice)
       return h(
         'div',
         {
+          title: task.title,
           style: {
             padding: '6px 8px',
             borderRadius: 8,
@@ -545,7 +548,20 @@ window.__ModuleLoader__.load({
             gap: 4,
           },
         },
-        h('div', { style: { fontSize: 12, lineHeight: '16px' } }, task.title),
+        h(
+          'div',
+          {
+            style: {
+              fontSize: 11,
+              lineHeight: '15px',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            },
+          },
+          shortTaskTitle(task.title),
+        ),
         h(
           'div',
           { style: { fontSize: 9, opacity: 0.5, fontFamily: mono, wordBreak: 'break-all' } },
@@ -588,12 +604,12 @@ window.__ModuleLoader__.load({
         moveError ? h('div', { style: { fontSize: 11, color: C.bad, marginBottom: 6 } }, moveError) : null,
         h(
           'div',
-          { style: { display: 'flex', gap: 8, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 } },
+          { style: { display: 'flex', gap: 10, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 } },
           BOARD_COLUMNS.map(([column, label]) => {
             const items = tasks.items.filter((task) => task.kanban === column)
             return h(
               'div',
-              { key: column, style: { flex: '1 1 150px', minWidth: 150, display: 'flex', flexDirection: 'column', gap: 6 } },
+              { key: column, style: { flex: '1 1 200px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 6 } },
               h(
                 'div',
                 { style: { display: 'flex', gap: 6, alignItems: 'baseline' } },
@@ -767,11 +783,27 @@ window.__ModuleLoader__.load({
             flexDirection: 'column',
             gap: 10,
             width: '100%',
-            maxWidth: 720,
+            maxWidth: 860,
             minWidth: 300,
             boxSizing: 'border-box',
           },
         },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h('div', { style: { fontSize: 13, fontWeight: 600 } }, 'SDD-компас'),
+          h('span', { style: { flex: 1 } }),
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: close,
+              title: 'Закрыть',
+              style: { border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 16, opacity: 0.6, lineHeight: 1 },
+            },
+            '×',
+          ),
+        ),
         // Tabs wrap instead of clipping; the refresh action lives in the footer.
         h(
           'div',
@@ -826,10 +858,8 @@ window.__ModuleLoader__.load({
         ),
       )
 
-      const Modal = primitives?.Modal
-      if (typeof Modal === 'function') {
-        return h(Modal, { open: true, onClose: close, title: 'SDD-компас', closeLabel: 'Закрыть' }, body)
-      }
+      // The stock modal is too narrow for a four-column board, so the panel
+      // renders its own overlay with a wider canvas.
       return h(
         'div',
         {
@@ -855,8 +885,8 @@ window.__ModuleLoader__.load({
               border: '1px solid rgba(127,127,127,0.35)',
               borderRadius: 12,
               padding: 16,
-              width: 'min(720px, 96vw)',
-              maxHeight: '84vh',
+              width: 'min(900px, 96vw)',
+              maxHeight: '88vh',
               overflow: 'auto',
               boxSizing: 'border-box',
             },
