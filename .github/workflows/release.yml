@@ -13,6 +13,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +26,12 @@ jobs:
 
       - name: Package the plugin tarball
         run: npm pack
+
+      - name: Publish to npmjs (only when NPM_TOKEN is configured)
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
 
       - name: Scope the package for GitHub Packages
         run: npm pkg set name=@andrewganzha/dsh-sdd-compass

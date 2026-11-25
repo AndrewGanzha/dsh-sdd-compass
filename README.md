@@ -53,6 +53,9 @@ npm install @andrewganzha/dsh-sdd-compass
 The package is published by the `release` workflow on every `v*` tag. The same
 repository can be linked from source (below) when you want to edit the plugin.
 
+Public npm is one secret away: add an `NPM_TOKEN` repository secret, and the
+next tag also publishes the unscoped `dsh-sdd-compass` package to npmjs.
+
 ### From source
 
 1. Clone the repository next to your other plugins:
