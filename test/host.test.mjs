@@ -739,7 +739,11 @@ test('state detects the grilling skill', async () => {
 test('createChat validates tasks and drives the agent registry', async () => {
   const temp = await tempFixture('scratch')
   const calls = []
-  const agent = { followup: (message) => calls.push(message), options: { provider: 'test-provider', model: 'test-model' } }
+  const agent = {
+    followup: (message) => calls.push(message),
+    options: { provider: 'test-provider', model: 'test-model' },
+    session: { header: { cwd: temp.root } },
+  }
   const ctx = {
     get(name) {
       if (name !== 'agents') return undefined
@@ -749,6 +753,7 @@ test('createChat validates tasks and drives the agent registry', async () => {
           return { agent }
         },
         get: () => agent,
+        list: () => [agent],
       }
     },
   }

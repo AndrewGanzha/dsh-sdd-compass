@@ -508,7 +508,13 @@ export class SddService {
 
     const agents = this.ctx?.get?.('agents')
     if (!agents?.create) return { ok: false, error: 'agents-unavailable' }
-    const source = agents.get?.(sessionId)
+    // The live agent id may differ from the client-visible session id (forks,
+    // resumes), so fall back to the only live agent in this project.
+    const live = agents.list?.() ?? []
+    const source =
+      agents.get?.(sessionId) ??
+      live.find((candidate) => candidate?.session?.header?.cwd === root) ??
+      null
     if (!source) return { ok: false, error: 'agent-not-live' }
     const options = source.options ?? {}
     if (!options.provider || !options.model) return { ok: false, error: 'model-selection-unavailable' }
@@ -534,7 +540,11 @@ export class SddService {
     if (!sessionId) return { ok: false, error: 'no-session' }
     if (!text || typeof text !== 'string') return { ok: false, error: 'text-required' }
     const agents = this.ctx?.get?.('agents')
-    const agent = agents?.get?.(sessionId)
+    const live = agents?.list?.() ?? []
+    const agent =
+      agents?.get?.(sessionId) ??
+      live.find((candidate) => candidate?.session?.header?.cwd === (this.cwdFor(sessionId) ?? '')) ??
+      null
     if (!agent) return { ok: false, error: 'agent-not-live' }
     try {
       agent.followup(chatMessage(text))
