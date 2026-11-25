@@ -5,6 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const ROUTE = 'api/sdd'
+    const VERSION = '0.10.3'
     const POLL_MS = 20_000
     const C = {
       ok: '#22c55e',
@@ -716,6 +717,7 @@ window.__ModuleLoader__.load({
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8 } },
           h('div', { style: { fontSize: 13, fontWeight: 600 } }, 'SDD-компас'),
+          h('span', { style: { fontSize: 9, opacity: 0.35, fontFamily: mono } }, `v${VERSION}`),
           h('span', { style: { flex: 1 } }),
           h('button', { type: 'button', style: primaryButton({ padding: '4px 10px' }), onClick: () => void onFeature() }, '+ Задача'),
           h(
@@ -879,23 +881,34 @@ window.__ModuleLoader__.load({
 
         async function startChat(prompt, root) {
           if (!root) throw new Error('неизвестен корень проекта')
-          const api = connectionOf()?.api
-          if (!api?.sessions?.create || !api?.sessions?.prompt) throw new Error('API сессий недоступен')
+          const connection = connectionOf()
+          if (!connection) throw new Error('сервис connection недоступен')
+          const api = connection.api
+          if (!api) throw new Error(`connection без api (ключи: ${Object.keys(connection).join(', ')})`)
+          if (!api.sessions) throw new Error(`api без sessions (ключи: ${Object.keys(api).slice(0, 12).join(', ')})`)
+          if (typeof api.sessions.create !== 'function' || typeof api.sessions.prompt !== 'function') {
+            throw new Error(`sessions без create/prompt (ключи: ${Object.keys(api.sessions).join(', ')})`)
+          }
           const created = await api.sessions.create({ cwd: root })
           const createdResult = created?.result
-          if (!createdResult?.ok) throw new Error(createdResult?.error?.message ?? 'не удалось создать сессию')
+          if (!createdResult?.ok) {
+            throw new Error(`create: ${createdResult?.error?.message ?? JSON.stringify(created ?? {}).slice(0, 240)}`)
+          }
           const sessionId = createdResult.value?.sessionId
-          if (!sessionId) throw new Error('хост не вернул id сессии')
+          if (!sessionId) throw new Error(`create без sessionId: ${JSON.stringify(createdResult.value ?? {}).slice(0, 240)}`)
           const sent = await api.sessions.prompt({ sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }] })
-          if (!sent?.result?.ok) throw new Error(sent?.result?.error?.message ?? 'не удалось отправить задачу')
+          if (!sent?.result?.ok) {
+            throw new Error(`prompt: ${sent?.result?.error?.message ?? JSON.stringify(sent ?? {}).slice(0, 240)}`)
+          }
           await openSessionWhenListed(sessionId)
           return sessionId
         }
 
         async function runCommand(text, sessionId) {
           if (!sessionId) throw new Error('нет активной сессии')
-          const api = connectionOf()?.api
-          if (!api?.sessions?.prompt) throw new Error('API сессий недоступен')
+          const connection = connectionOf()
+          const api = connection?.api
+          if (!api?.sessions?.prompt) throw new Error('метод sessions.prompt недоступен')
           const sent = await api.sessions.prompt({
             sessionId,
             mode: 'queue',
@@ -908,7 +921,7 @@ window.__ModuleLoader__.load({
 
         async function openPath(absolute) {
           const workspaces = workspacesOf()
-          if (!workspaces?.openPath) throw new Error('открытие путей недоступно')
+          if (!workspaces?.openPath) throw new Error('метод workspaces.openPath недоступен')
           await workspaces.openPath(absolute)
         }
 
