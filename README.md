@@ -87,8 +87,8 @@ Optional `.sdd/config.json` in the project (created by `/sdd init`):
 - **Session-start briefing** — one `agent.inject()` message with the change and
   the documents to read first.
 - **`/sdd`** — `status | next | advance | archive | check | docs | stats | report | digest | projects | init | refresh | help`.
-- **Tools** — `sdd_status`, `sdd_check`, `sdd_projects` and `sdd_digest` for the model.
-- **Panel tabs** — status, statistics, documents, projects.
+- **Tools** — `sdd_status`, `sdd_check`, `sdd_projects`, `sdd_digest`, `sdd_tasks` and `sdd_task_move` for the model.
+- **Panel tabs** — status, tasks, statistics, documents, projects.
 
 `/sdd advance` prints the exact command for the next step (for example
 `openspec archive --change <name>`); the plugin never executes it, the person
@@ -144,6 +144,20 @@ phase and the findings. It stays honest when git is unavailable.
 To deliver it weekly, create a DSH scheduled task whose prompt asks for the
 digest (for example "Сделай недельный SDD-дайджест проекта: вызови sdd_digest
 и пришли результат"). The plugin never creates schedules by itself.
+
+## Task board
+
+The **Задачи** tab is a small kanban of the active change:
+
+- columns: `Очередь`, `В работе`, `Проверка`, `Готово`;
+- cards come from scratch tickets (`**Status:**`) and OpenSpec checkboxes;
+- buttons move a task by rewriting **only** its status marker — the
+  `**Status:**` value or one `[ ]`/`[x]` — the rest of the file stays intact;
+- OpenSpec tasks are binary, so only `Очередь` and `Готово` are writable there;
+- the same actions are exposed as `sdd_tasks` and `sdd_task_move`.
+
+The board is honest about its source of truth: it edits the artifacts the
+practice already uses, and never keeps a second copy of the status.
 
 ## Checks
 

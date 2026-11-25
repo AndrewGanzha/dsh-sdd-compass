@@ -15,6 +15,7 @@ import { pickDocs } from './docs.js'
 import { buildStats } from './stats.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId } from './trace.js'
 import { matchesImpact } from './impact.js'
+import { COLUMNS, kanbanOf } from './tasks.js'
 
 export const PHASES = ['idle', 'proposal', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive']
 
@@ -214,6 +215,47 @@ function buildLinks(project, change, trace) {
   }
 }
 
+/** Build the kanban task list for the active change. */
+export function buildTasks(change, practice) {
+  const items = []
+  if (change && practice === 'scratch') {
+    for (const issue of change.issues ?? []) {
+      items.push({
+        id: issue.id,
+        title: issue.title,
+        path: issue.path,
+        line: null,
+        kind: 'ticket',
+        status: issue.status,
+        blocked: issue.status === 'blocked',
+        blockedBy: issue.blockedBy ?? null,
+        checkboxes: issue.checkboxes ?? null,
+      })
+    }
+  } else if (change && practice === 'openspec') {
+    for (const item of change.taskItems ?? []) {
+      items.push({
+        ...item,
+        path: item.path ?? (change.relDir ? `${change.relDir}/tasks.md` : null),
+      })
+    }
+  }
+
+  const counts = { todo: 0, doing: 0, review: 0, done: 0 }
+  for (const item of items) {
+    item.kanban = kanbanOf(practice, item.status)
+    counts[item.kanban] = (counts[item.kanban] ?? 0) + 1
+  }
+
+  return {
+    changeId: change?.id ?? null,
+    practice,
+    items,
+    counts,
+    writable: practice === 'openspec' ? ['todo', 'done'] : practice === 'scratch' ? [...COLUMNS] : [],
+  }
+}
+
 /**
  * Build the full state for one project.
  * @param {{ root: string, project: any, config?: any, now?: number, cache?: Map<string, any> }} input
@@ -304,6 +346,7 @@ export async function buildState(input) {
     stats,
     trace: traceSummary,
     links,
+    tasks: buildTasks(active, detection.practice),
     note: note ?? null,
     configError: loaded.error ?? null,
     configPath: loaded.configPath ?? null,

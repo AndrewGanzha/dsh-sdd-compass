@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -17,6 +17,7 @@ import { gateReasonText, writeWarningText } from '../src/render.js'
 import { advanceText, portfolioText, reportText } from '../src/render.js'
 import { SddService } from '../src/service.js'
 import { buildState, commandFor, phaseForOpenspec, phaseForScratch, phaseForSsc, selectActive } from '../src/state.js'
+import { kanbanOf, parseTaskItems, setTaskColumn } from '../src/tasks.js'
 import { annotatedChangedFiles, collectAnnotations, looksLikeId, parseAnnotations } from '../src/trace.js'
 import { median, percentile } from '../src/stats.js'
 
@@ -581,6 +582,133 @@ test('digest without git degrades honestly', async () => {
   const digest = await buildDigest({ project: { isGit: false, root: '/plain' }, state, now: Date.now() })
   assert.equal(digest.available, false)
   assert.match(digestText(state, digest), /История недоступна: проект не под git/)
+})
+
+test('parseTaskItems reads OpenSpec checkboxes with line numbers', () => {
+  const text = ['## 1. Endpoint', '', '- [x] Add GET /export', '- [ ] Add CSV writer', '', '- [ ] Cover streaming'].join('\n')
+  const items = parseTaskItems(text, 'tasks.md')
+  assert.equal(items.length, 3)
+  assert.deepEqual(
+    items.map((item) => [item.id, item.line, item.done, item.title]),
+    [
+      ['T1', 3, true, 'Add GET /export'],
+      ['T2', 4, false, 'Add CSV writer'],
+      ['T3', 6, false, 'Cover streaming'],
+    ],
+  )
+})
+
+test('kanbanOf maps native statuses', () => {
+  assert.equal(kanbanOf('scratch', 'ready-for-agent'), 'todo')
+  assert.equal(kanbanOf('scratch', 'in-progress'), 'doing')
+  assert.equal(kanbanOf('scratch', 'review'), 'review')
+  assert.equal(kanbanOf('scratch', 'done'), 'done')
+  assert.equal(kanbanOf('scratch', 'wontfix'), 'done')
+  assert.equal(kanbanOf('openspec', 'todo'), 'todo')
+  assert.equal(kanbanOf('openspec', 'done'), 'done')
+})
+
+test('setTaskColumn rewrites only the scratch status line', async () => {
+  const temp = await tempFixture('scratch')
+  const file = path.join(temp.root, '.scratch/catalog-api/issues/01-setup.md')
+  try {
+    await setTaskColumn({
+      root: temp.root,
+      practice: 'scratch',
+      column: 'doing',
+      task: { path: '.scratch/catalog-api/issues/01-setup.md', status: 'ready-for-agent' },
+    })
+    const text = await readFile(file, 'utf8')
+    assert.match(text, /\*\*Status:\*\* in-progress/)
+    assert.match(text, /# 01 Setup/)
+    assert.match(text, /scaffold the endpoint/)
+
+    await setTaskColumn({
+      root: temp.root,
+      practice: 'scratch',
+      column: 'done',
+      task: { path: '.scratch/catalog-api/issues/01-setup.md', status: 'in-progress' },
+    })
+    assert.match(await readFile(file, 'utf8'), /\*\*Status:\*\* done/)
+  } finally {
+    await temp.cleanup()
+  }
+})
+
+test('setTaskColumn toggles one OpenSpec checkbox and rejects doing', async () => {
+  const temp = await tempFixture('openspec')
+  const file = path.join(temp.root, 'openspec/changes/alpha/tasks.md')
+  try {
+    await setTaskColumn({
+      root: temp.root,
+      practice: 'openspec',
+      column: 'done',
+      task: { path: 'openspec/changes/alpha/tasks.md', line: 4, status: 'todo' },
+    })
+    const text = await readFile(file, 'utf8')
+    assert.match(text, /- \[x\] Add CSV writer/)
+    assert.match(text, /- \[x\] Add GET \/export/)
+
+    await setTaskColumn({
+      root: temp.root,
+      practice: 'openspec',
+      column: 'todo',
+      task: { path: 'openspec/changes/alpha/tasks.md', line: 4, status: 'done' },
+    })
+    assert.match(await readFile(file, 'utf8'), /- \[ \] Add CSV writer/)
+
+    await assert.rejects(
+      setTaskColumn({
+        root: temp.root,
+        practice: 'openspec',
+        column: 'doing',
+        task: { path: 'openspec/changes/alpha/tasks.md', line: 4, status: 'todo' },
+      }),
+      /очередь и готово/,
+    )
+    await assert.rejects(
+      setTaskColumn({ root: temp.root, practice: 'scratch', column: 'doing', task: { path: '../outside.md', status: 'todo' } }),
+      /вне проекта/,
+    )
+  } finally {
+    await temp.cleanup()
+  }
+})
+
+test('state builds kanban tasks for scratch and openspec', async () => {
+  const scratch = await stateFor('scratch')
+  assert.equal(scratch.tasks.items.length, 2)
+  assert.equal(scratch.tasks.counts.doing, 0)
+  assert.equal(scratch.tasks.counts.todo, 1)
+  assert.equal(scratch.tasks.counts.done, 1)
+  assert.deepEqual(scratch.tasks.writable, ['todo', 'doing', 'review', 'done'])
+
+  const openspec = await stateFor('openspec')
+  assert.equal(openspec.tasks.items.length, 3)
+  assert.equal(openspec.tasks.counts.done, 1)
+  assert.equal(openspec.tasks.counts.todo, 2)
+  assert.deepEqual(openspec.tasks.writable, ['todo', 'done'])
+})
+
+test('service moves a scratch task and reports the new column', async () => {
+  const temp = await tempFixture('scratch')
+  const service = new SddService()
+  try {
+    const result = await service.moveTaskForCwd(temp.root, {
+      path: '.scratch/catalog-api/issues/01-setup.md',
+      id: '01-setup',
+      status: 'doing',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.column, 'doing')
+
+    const state = await service.ensureState(temp.root, true)
+    assert.equal(state.tasks.counts.doing, 1)
+    assert.equal(state.tasks.counts.todo, 0)
+  } finally {
+    service.dispose()
+    await temp.cleanup()
+  }
 })
 
 test('CI severity helpers', () => {

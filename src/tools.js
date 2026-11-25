@@ -74,6 +74,78 @@ function projectsTextFor(value) {
 }
 
 /**
+ * `sdd_tasks` — kanban task list of the active change.
+ * @param {{ tasks: (exec: any) => Promise<any> }} service
+ */
+export function tasksTool(service) {
+  return {
+    name: 'sdd_tasks',
+    description:
+      'List the tasks of the active SDD change as kanban columns (todo, doing, review, done): scratch tickets or OpenSpec checkboxes, with paths and line numbers. Use it to pick the next task or to report board state.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(_args, value) {
+        return textBlock(tasksTextFor(value))
+      },
+    },
+    isConcurrencySafe: () => true,
+    async execute(_args, exec) {
+      return service.tasks(exec)
+    },
+  }
+}
+
+/**
+ * `sdd_task_move` — move one task between kanban columns.
+ * @param {{ moveTask: (exec: any, request: any) => Promise<any> }} service
+ */
+export function taskMoveTool(service) {
+  return {
+    name: 'sdd_task_move',
+    description:
+      'Move one task of the active change to another kanban column by rewriting its status: the `**Status:**` line of a scratch ticket or the checkbox of an OpenSpec task. Only the status marker changes; the rest of the file stays intact. OpenSpec supports only todo and done.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Task file path relative to the project root.' },
+        line: { type: 'integer', description: '1-based line of the checkbox (OpenSpec only).' },
+        id: { type: 'string', description: 'Task id from sdd_tasks (scratch tickets).' },
+        status: { type: 'string', enum: ['todo', 'doing', 'review', 'done'], description: 'Target kanban column.' },
+      },
+      required: ['path', 'status'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render(_args, value) {
+        return textBlock(value?.ok ? `Задача перемещена: ${value.column} (${value.raw})` : `Не удалось: ${value?.error ?? 'ошибка'}`)
+      },
+    },
+    async execute(args, exec) {
+      return service.moveTask(exec, args)
+    },
+  }
+}
+
+function tasksTextFor(value) {
+  const tasks = value?.tasks
+  if (!tasks?.items?.length) return 'Задач нет: у активного изменения не найдено тикетов или чекбоксов.'
+  const lines = [`Задачи изменения "${tasks.changeId ?? '—'}" (${tasks.items.length}):`]
+  for (const column of ['todo', 'doing', 'review', 'done']) {
+    const items = tasks.items.filter((item) => item.kanban === column)
+    if (items.length === 0) continue
+    lines.push(`- ${column}:`)
+    for (const item of items) lines.push(`  - ${item.id}: ${item.title}${item.blockedBy ? ` (блок: ${item.blockedBy})` : ''}`)
+  }
+  return lines.join('\n')
+}
+
+/**
  * `sdd_digest` — weekly digest for the session's project.
  * @param {{ digest: (exec: any, days?: number) => Promise<any> }} service
  */

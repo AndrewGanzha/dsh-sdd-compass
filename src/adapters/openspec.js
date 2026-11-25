@@ -7,6 +7,7 @@
 import path from 'node:path'
 import { countCheckboxes, countQuestions, firstHeading, isDir, listDir, mtimeMs, readTextSafe, relPath, walkFiles } from '../fsx.js'
 import { parseImpact } from '../impact.js'
+import { parseTaskItems } from '../tasks.js'
 
 /** Read the `created:` field from a change's `.openspec.yaml`. */
 function parseCreated(text) {
@@ -84,6 +85,7 @@ async function readChange(root, dir, archived) {
     archived,
     has,
     tasks,
+    taskItems: parseTaskItems(tasksText, relPath(root, tasksPath)),
     questions,
     impact: parseImpact(proposal),
     createdAt,

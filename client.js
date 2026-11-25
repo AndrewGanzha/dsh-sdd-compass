@@ -56,6 +56,8 @@ window.__ModuleLoader__.load({
       refreshing: false,
       projects: null,
       projectsLoading: false,
+      moving: false,
+      moveError: null,
     }
     let currentSessionId = null
     const listeners = new Set()
@@ -117,6 +119,36 @@ window.__ModuleLoader__.load({
         setState({ projects: [], projectsLoading: false, error: String(error?.message ?? error) })
       } finally {
         projectsInFlight = false
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Task board: move one task by rewriting its status marker
+    // ------------------------------------------------------------------
+    async function moveTask(task, status) {
+      setState({ moving: true, moveError: null })
+      try {
+        const response = await fetch(new URL('api/sdd/tasks/move', document.baseURI), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            path: task.path,
+            line: task.line,
+            id: task.id,
+            status,
+          }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload?.ok) {
+          setState({ moving: false, moveError: payload?.error ?? `HTTP ${response.status}` })
+          return
+        }
+        setState({ moving: false, moveError: null })
+        await load(currentSessionId, true)
+      } catch (error) {
+        setState({ moving: false, moveError: String(error?.message ?? error) })
       }
     }
 
@@ -479,6 +511,112 @@ window.__ModuleLoader__.load({
       )
     }
 
+    const BOARD_COLUMNS = [
+      ['todo', 'Очередь'],
+      ['doing', 'В работе'],
+      ['review', 'Проверка'],
+      ['done', 'Готово'],
+    ]
+
+    function taskActions(task, writable, practice) {
+      const actions = []
+      if (practice === 'openspec') {
+        actions.push(task.kanban === 'done' ? ['todo', 'Вернуть'] : ['done', 'Готово'])
+        return actions
+      }
+      if (task.kanban !== 'doing' && writable.includes('doing')) actions.push(['doing', 'Взять'])
+      if (task.kanban !== 'review' && task.kanban !== 'done' && writable.includes('review')) actions.push(['review', 'Проверка'])
+      if (task.kanban !== 'done' && writable.includes('done')) actions.push(['done', 'Готово'])
+      if (task.kanban !== 'todo') actions.push(['todo', 'Вернуть'])
+      return actions
+    }
+
+    function TaskCard({ task, writable, practice, moving }) {
+      const actions = taskActions(task, writable, practice)
+      return h(
+        'div',
+        {
+          style: {
+            padding: '6px 8px',
+            borderRadius: 8,
+            background: 'rgba(127,127,127,0.10)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          },
+        },
+        h('div', { style: { fontSize: 12, lineHeight: '16px' } }, task.title),
+        h(
+          'div',
+          { style: { fontSize: 9, opacity: 0.5, fontFamily: mono, wordBreak: 'break-all' } },
+          `${task.id}${task.blockedBy ? ` · блок: ${task.blockedBy}` : ''}`,
+        ),
+        actions.length > 0
+          ? h(
+              'div',
+              { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+              actions.map(([status, label]) =>
+                h(
+                  'button',
+                  {
+                    key: status,
+                    type: 'button',
+                    disabled: moving,
+                    style: button({ padding: '2px 8px', fontSize: 10 }),
+                    onClick: () => void moveTask(task, status),
+                  },
+                  label,
+                ),
+              ),
+            )
+          : null,
+      )
+    }
+
+    function TasksTab({ data, moving, moveError }) {
+      const tasks = data.tasks
+      if (!tasks?.items?.length) {
+        return h(
+          'div',
+          { style: { fontSize: 12, opacity: 0.65, padding: '12px 0' } },
+          'Задач нет: у активного изменения не найдено тикетов или чекбоксов.',
+        )
+      }
+      return h(
+        'div',
+        null,
+        moveError ? h('div', { style: { fontSize: 11, color: C.bad, marginBottom: 6 } }, moveError) : null,
+        h(
+          'div',
+          { style: { display: 'flex', gap: 8, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4 } },
+          BOARD_COLUMNS.map(([column, label]) => {
+            const items = tasks.items.filter((task) => task.kanban === column)
+            return h(
+              'div',
+              { key: column, style: { flex: '1 1 150px', minWidth: 150, display: 'flex', flexDirection: 'column', gap: 6 } },
+              h(
+                'div',
+                { style: { display: 'flex', gap: 6, alignItems: 'baseline' } },
+                h('span', { style: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, opacity: 0.55 } }, label),
+                h('span', { style: chip() }, String(items.length)),
+              ),
+              items.length === 0
+                ? h('div', { style: { fontSize: 10, opacity: 0.3 } }, '—')
+                : items.map((task) =>
+                    h(TaskCard, {
+                      key: `${task.path}:${task.line ?? task.id}`,
+                      task,
+                      writable: tasks.writable ?? [],
+                      practice: tasks.practice,
+                      moving,
+                    }),
+                  ),
+            )
+          }),
+        ),
+      )
+    }
+
     function StatsTab({ data }) {
       const snapshot = data.stats?.snapshot
       const history = data.stats?.history
@@ -613,6 +751,7 @@ window.__ModuleLoader__.load({
       const data = snapshot.data
       const tabs = [
         ['status', 'Статус'],
+        ['tasks', 'Задачи'],
         ['stats', 'Метрики'],
         ['docs', 'Документы'],
         ['projects', 'Проекты'],
@@ -668,11 +807,13 @@ window.__ModuleLoader__.load({
             )
           : snapshot.tab === 'status'
             ? h(StatusTab, { data })
-            : snapshot.tab === 'stats'
-              ? h(StatsTab, { data })
-              : snapshot.tab === 'projects'
-                ? h(ProjectsTab, { projects: snapshot.projects, loading: snapshot.projectsLoading })
-                : h(DocsTab, { data }),
+            : snapshot.tab === 'tasks'
+              ? h(TasksTab, { data, moving: snapshot.moving, moveError: snapshot.moveError })
+              : snapshot.tab === 'stats'
+                ? h(StatsTab, { data })
+                : snapshot.tab === 'projects'
+                  ? h(ProjectsTab, { projects: snapshot.projects, loading: snapshot.projectsLoading })
+                  : h(DocsTab, { data }),
         h(
           'div',
           { style: { display: 'flex', gap: 8, marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(127,127,127,0.18)', flexWrap: 'wrap', alignItems: 'center' } },

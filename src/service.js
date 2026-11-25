@@ -14,12 +14,39 @@ import { detectPractice } from './detect.js'
 import { isArtifactPath, resolveProject } from './project.js'
 import * as render from './render.js'
 import { buildState } from './state.js'
+import { setTaskColumn } from './tasks.js'
 
 const TTL_MS = 15_000
 const DEBOUNCE_MS = 400
 
 /** Tools that mutate files; only these participate in SDD nudges. */
 const WRITE_TOOLS = new Set(['write', 'edit', 'apply_patch', 'str_replace_editor', 'write_file', 'create_file', 'multi_edit'])
+
+/** Read and parse a small JSON request body. */
+function readJsonBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks = []
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > limit) {
+        reject(new Error('body-too-large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8').trim()
+        resolve(text ? JSON.parse(text) : {})
+      } catch (error) {
+        reject(error)
+      }
+    })
+    req.on('error', reject)
+  })
+}
 
 /** JSON response helper for the HTTP route. */
 function json(res, status, payload) {
@@ -258,15 +285,27 @@ export class SddService {
     return { available: Boolean(persistence?.list), count, error }
   }
 
-  /** Handle GET /api/sdd?sessionId=…&refresh=1 and GET /api/sdd/projects. */
+  /** Handle GET /api/sdd, GET /api/sdd/projects and POST /api/sdd/tasks/move. */
   async handleHttp(req, res) {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+      const pathname = url.pathname.replace(/\/+$/, '')
+      if (pathname.endsWith('/tasks/move')) {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' })
+        let body = null
+        try {
+          body = await readJsonBody(req)
+        } catch (error) {
+          return json(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+        const result = await this.moveTaskForSession(body?.sessionId ?? null, body ?? {})
+        return json(res, result.ok ? 200 : 400, result)
+      }
       if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' })
-      if (url.pathname.replace(/\/+$/, '').endsWith('/projects')) {
+      if (pathname.endsWith('/projects')) {
         return json(res, 200, { ok: true, projects: await this.portfolio() })
       }
-      if (url.pathname.replace(/\/+$/, '') !== '/api/sdd') {
+      if (pathname !== '/api/sdd') {
         return json(res, 404, { ok: false, error: 'not-found' })
       }
       const sessionId = url.searchParams.get('sessionId') || null
@@ -347,6 +386,58 @@ export class SddService {
     if (!state) return { ok: false, error: 'no-session', markdown: '' }
     const digest = await buildDigest({ project: state.project, state, days })
     return { ok: true, markdown: digestText(state, digest), digest }
+  }
+
+  /** Task board of the session's project. */
+  async tasks(exec) {
+    const cwd = exec?.agent?.session?.header?.cwd
+    const state = await this.ensureState(cwd)
+    if (!state) return { ok: false, error: 'no-session', tasks: null }
+    return { ok: true, tasks: state.tasks }
+  }
+
+  /**
+   * Move one task to another kanban column, rewriting only its status marker.
+   * @param {string|null} cwd
+   * @param {{ path?: string, line?: number|null, id?: string, status?: string }} request
+   */
+  async moveTaskForCwd(cwd, request) {
+    const state = await this.ensureState(cwd)
+    if (!state) return { ok: false, error: 'no-session' }
+    const items = state.tasks?.items ?? []
+    if (items.length === 0) return { ok: false, error: 'no-tasks' }
+    const wantedLine = Number.isFinite(request?.line) ? request.line : null
+    const item = items.find(
+      (task) =>
+        task.path === request?.path &&
+        (wantedLine !== null ? task.line === wantedLine : String(task.id) === String(request?.id)),
+    )
+    if (!item) return { ok: false, error: 'task-not-found' }
+    try {
+      const result = await setTaskColumn({
+        root: state.project.root,
+        practice: state.practice,
+        task: item,
+        column: String(request?.status ?? ''),
+      })
+      this.invalidate(state.project.root)
+      return { ok: true, ...result }
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) }
+    }
+  }
+
+  /** Tool `sdd_task_move`. */
+  async moveTask(exec, request) {
+    const cwd = exec?.agent?.session?.header?.cwd
+    return this.moveTaskForCwd(cwd, request)
+  }
+
+  /** Move a task for the Web Client (session-scoped). */
+  async moveTaskForSession(sessionId, request) {
+    const cwd = await this.cwdForSession(sessionId)
+    if (!cwd) return { ok: false, error: 'no-session' }
+    return this.moveTaskForCwd(cwd, request)
   }
 
   /** `/sdd` command handler. */
