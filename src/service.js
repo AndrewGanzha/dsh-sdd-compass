@@ -533,6 +533,8 @@ export class SddService {
       }
     }
     if (!presetId) return { ok: false, error: 'agent-preset-unavailable' }
+    const presets = this.ctx?.get?.('agentPresets')
+    if (!presets?.mount) return { ok: false, error: 'presets-unavailable' }
 
     const newSessionId = `session-${randomUUID()}`
     try {
@@ -540,6 +542,11 @@ export class SddService {
         sessionId: newSessionId,
         meta: { cwd, agentPreset: presetId },
         agentOptions,
+        // The preset's tool/prompt plugins are mounted in the factory's setup
+        // hook; the header id alone composes nothing.
+        setup: async (agentCtx) => {
+          await presets.mount(agentCtx, presetId)
+        },
       })
       await this.attachToWorkspace(newSessionId, cwd, root)
       handle.agent.followup(chatMessage(prompt))

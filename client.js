@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const ROUTE = 'api/sdd'
-    const VERSION = '0.11.1'
+    const VERSION = '0.11.2'
     const POLL_MS = 20_000
     const C = {
       ok: '#22c55e',

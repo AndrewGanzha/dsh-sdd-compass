@@ -739,6 +739,7 @@ test('state detects the grilling skill', async () => {
 test('createChat validates tasks and drives the agent registry', async () => {
   const temp = await tempFixture('scratch')
   const calls = []
+  const mounts = []
   const agent = {
     followup: (message) => calls.push(message),
     options: { provider: 'test-provider', model: 'test-model' },
@@ -746,15 +747,26 @@ test('createChat validates tasks and drives the agent registry', async () => {
   }
   const ctx = {
     get(name) {
-      if (name !== 'agents') return undefined
-      return {
-        create: async (options) => {
-          calls.push(options)
-          return { agent }
-        },
-        get: () => agent,
-        list: () => [agent],
+      if (name === 'agents') {
+        return {
+          create: async (options) => {
+            calls.push(options)
+            if (typeof options.setup === 'function') await options.setup({ mountTarget: true })
+            return { agent }
+          },
+          get: () => agent,
+          list: () => [agent],
+        }
       }
+      if (name === 'agentPresets') {
+        return {
+          mount: async (agentCtx, id) => {
+            mounts.push({ agentCtx, id })
+            return { id }
+          },
+        }
+      }
+      return undefined
     },
   }
   const service = new SddService(ctx)
@@ -772,6 +784,8 @@ test('createChat validates tasks and drives the agent registry', async () => {
     assert.equal(calls[0].meta.cwd, temp.root)
     assert.equal(calls[0].meta.agentPreset, 'standard')
     assert.deepEqual(calls[0].agentOptions, { provider: 'test-provider', model: 'test-model' })
+    assert.equal(mounts.length, 1)
+    assert.equal(mounts[0].id, 'standard')
     assert.ok(calls[1].content[0].text.includes(task.title))
 
     const feature = await service.createChat('s1', { kind: 'feature' })
