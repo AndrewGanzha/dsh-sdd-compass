@@ -521,11 +521,24 @@ export class SddService {
     const agentOptions = { provider: options.provider, model: options.model }
     if (options.reasoningEffort) agentOptions.reasoningEffort = options.reasoningEffort
 
+    // The preset brings the tool set (files, search, shell). Without it the new
+    // agent is composed with no tools at all.
+    let presetId = source.session?.header?.agentPreset ?? null
+    if (!presetId) {
+      try {
+        const preset = await this.ctx?.get?.('agentPresets')?.resolve?.()
+        presetId = preset?.id ?? null
+      } catch {
+        presetId = null
+      }
+    }
+    if (!presetId) return { ok: false, error: 'agent-preset-unavailable' }
+
     const newSessionId = `session-${randomUUID()}`
     try {
       const handle = await agents.create({
         sessionId: newSessionId,
-        meta: { cwd },
+        meta: { cwd, agentPreset: presetId },
         agentOptions,
       })
       await this.attachToWorkspace(newSessionId, cwd, root)

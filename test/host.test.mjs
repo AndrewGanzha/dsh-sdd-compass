@@ -742,7 +742,7 @@ test('createChat validates tasks and drives the agent registry', async () => {
   const agent = {
     followup: (message) => calls.push(message),
     options: { provider: 'test-provider', model: 'test-model' },
-    session: { header: { cwd: temp.root } },
+    session: { header: { cwd: temp.root, agentPreset: 'standard' } },
   }
   const ctx = {
     get(name) {
@@ -770,6 +770,7 @@ test('createChat validates tasks and drives the agent registry', async () => {
     assert.equal(created.ok, true)
     assert.match(created.sessionId, /^session-/)
     assert.equal(calls[0].meta.cwd, temp.root)
+    assert.equal(calls[0].meta.agentPreset, 'standard')
     assert.deepEqual(calls[0].agentOptions, { provider: 'test-provider', model: 'test-model' })
     assert.ok(calls[1].content[0].text.includes(task.title))
 
